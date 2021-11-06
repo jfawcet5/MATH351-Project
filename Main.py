@@ -26,6 +26,8 @@ FPS = 60
 
 BLACK = (0,0,0)
 WHITE = (255,255,255)
+GREY = (150,150,150)
+BLUE = (50, 20, 170)
 
 
 ####################
@@ -55,7 +57,7 @@ def moveScreen(grid, points, dx, dy):
 
 
 class Point:
-    def __init__(self, position, color=BLACK):
+    def __init__(self, position, color=BLUE):
         x,y = position
         radius = 5
         self.rect = pygame.Rect(x - radius, y - radius, radius*2, radius*2)
@@ -81,21 +83,131 @@ class Grid:
         self.xAxis = pygame.Rect(0, self.rect.top, size[0], size[1])
         self.yAxis = pygame.Rect(0, self.rect.top, size[0], size[1])
 
+        self.xRange = (-5, 5)
+        self.yRange = (-5, 5)
+
+        self.scale = 1
+
+        self.font = pygame.font.SysFont("QuickType 2", 16, bold=True)
+
         self.__drawGrid__()
 
     def __drawGrid__(self):
+        # Draws the x and y axes and the grid lines
         self.screen.fill(WHITE)
-        pygame.draw.line(self.screen, BLACK, self.xAxis.midleft, self.xAxis.midright)
-        pygame.draw.line(self.screen, BLACK, self.yAxis.midtop, self.yAxis.midbottom)
+        pygame.draw.line(self.screen, BLACK, self.xAxis.midleft, self.xAxis.midright, 3)
+        pygame.draw.line(self.screen, BLACK, self.yAxis.midtop, self.yAxis.midbottom, 3)
+ 
+        dx,dy = self.getOffset()
+
+        valuex = dx // self.xAxis.width
+        valuey = dy // self.yAxis.height
+        x0 = self.xRange[0] + valuex
+        x1 = self.xRange[1] + valuex
+
+        y0 = self.yRange[0] + valuey
+        y1 = self.yRange[1] + valuey
+        
+        numlines = (x1 - x0) + 1
+
+        offsetX = self.xAxis.width / numlines
+        offsetY = self.yAxis.height / numlines
+        curX = (self.xAxis.centerx) % self.xAxis.width
+        curY = (self.yAxis.centery) % self.yAxis.height
+
+        centerPointX = ((x0 + x1) // 2) - valuex
+        centerPointY = ((y0 + y1) // 2) - valuey
+
+        curX = curX - offsetX - dx
+
+        i = -1
+        while curX > self.xAxis.left:
+            pygame.draw.line(self.screen, GREY, (curX, self.yAxis.top), (curX, self.yAxis.bottom), 1)
+
+            v = (centerPointX + i) * self.scale
+            self.__labelAxis__(v, (curX, self.xAxis.centery + 4), True)
+
+            i -= 1
+            curX = curX - offsetX
+
+        curX = (self.xAxis.centerx) % self.xAxis.width
+        curX = curX + offsetX - dx
+
+        i = 1
+        while curX < self.xAxis.right:
+            pygame.draw.line(self.screen, GREY, (curX, self.yAxis.top), (curX, self.yAxis.bottom), 1)
+
+            v = (centerPointX + i) * self.scale
+            self.__labelAxis__(v, (curX, self.xAxis.centery + 4), True)
+
+            i += 1
+            curX = curX + offsetX
+
+        curY = (self.yAxis.centery) % self.yAxis.height
+        curY = curY + offsetY - dy
+        
+        i = -1
+        while curY < self.yAxis.bottom:
+            pygame.draw.line(self.screen, GREY, (self.xAxis.left, curY), (self.xAxis.right, curY), 1)
+
+            v = (centerPointX + i) * self.scale
+            self.__labelAxis__(v, (self.yAxis.centerx - 4, curY), False)
+
+            i -= 1
+            curY = curY + offsetY
+
+        curY = (self.yAxis.centery) % self.yAxis.height
+        curY = curY - offsetY - dy
+
+        i = 1
+        while curY > self.yAxis.top:
+            pygame.draw.line(self.screen, GREY, (self.xAxis.left, curY), (self.xAxis.right, curY), 1)
+
+            v = (centerPointX + i) * self.scale
+            self.__labelAxis__(v, (self.yAxis.centerx - 4, curY), False)
+
+            i += 1
+            curY = curY - offsetY
+
+        return None
+
+    def __labelAxis__(self, value, position, xAxis):
+        # Draws a character 'value' at the specified position. Uses 'xAxis' bool parameter
+        # to determine the offset of the position
+        x,y = position
+        
+        text = self.font.render(f"{value}", True, BLACK)
+        textRect = text.get_rect()
+        if xAxis:
+            if y < self.yAxis.top:
+                y = self.yAxis.top + 2 + textRect.height
+            elif (y + textRect.height) > self.yAxis.bottom:
+                y = self.yAxis.bottom - 2 - textRect.height
+            else:
+                y = y + textRect.height
+            textRect.center = (x, y)
+        else:
+            if (x - textRect.width) < self.xAxis.left:
+                x = self.xAxis.left + 2 + textRect.width
+            elif x > self.xAxis.right:
+                x = self.xAxis.right - 2 - textRect.width
+            else:
+                x = x - textRect.width
+            textRect.center = (x, y)
+
+        pygame.draw.rect(self.screen, WHITE, textRect)
+        self.screen.blit(text, textRect)
+        return None
 
     def getOffset(self):
+        # Returns the offset in the x and y coordinates from the origin. This is used to
+        # reset the grid to (0,0)
         dx = self.origin[0] - self.yAxis.centerx
         dy = self.origin[1] - self.xAxis.centery
-        print(f"dx:{dx}, dy:{dy}")
         return dx,dy
 
     def updatePosition(self, dx, dy):
-        #self.rect.center = (self.rect.centerx + dx, self.rect.centery + dy)
+        # Scroll the grid based on the user's mouse drag, which is specified by dx, dy
         self.xAxis.centery += dy
         self.yAxis.centerx += dx
         self.__drawGrid__()
