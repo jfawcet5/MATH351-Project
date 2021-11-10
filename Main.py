@@ -7,13 +7,18 @@
 
 import pygame
 import sys
+import math
 
 from pygame.locals import (
     MOUSEBUTTONDOWN,
     MOUSEBUTTONUP,
+    MOUSEMOTION,
     K_p,
     K_m,
     K_r,
+    K_x,
+    K_z,
+    K_t,
     KEYDOWN, 
     K_SPACE,
     K_ESCAPE,
@@ -27,7 +32,11 @@ FPS = 60
 BLACK = (0,0,0)
 WHITE = (255,255,255)
 GREY = (150,150,150)
+DARKGREY = (120,120,120)
 BLUE = (50, 20, 170)
+RED = (255, 10, 10)
+
+DEBUG = False
 
 
 ####################
@@ -39,304 +48,433 @@ def sortList(listToSort):
     # Sorts a list of tuples
     return sorted(listToSort)
 
-def inCircle(rect, pos):
-    x,y = pos
-    collideX = x > rect.left and x < rect.right
-    collideY = y > rect.top and y < rect.bottom
+
+def inCircle(pointpos, circleRadius, clickpos):
+    #x,y = pos
+    #print(f"px: {pointpos[0]}, cx: {clickpos[0]}")
+    collideX = abs(clickpos[0] - pointpos[0]) <= circleRadius #x > rect.left and x < rect.right
+    collideY = abs(clickpos[1] - pointpos[1]) <= circleRadius #y > rect.top and y < rect.bottom
     return collideX and collideY
 
-def moveScreen(grid, points, dx, dy):
-    grid.updatePosition(dx, dy)
-    for point in points:
-        point.move((point.rect.centerx + dx, point.rect.centery + dy))
-
 
 #####################
-# Class Definitions #
+#    Point Class    #
 #####################
-
-
 class Point:
-    def __init__(self, position, color=BLUE):
-        x,y = position
-        radius = 5
-        self.rect = pygame.Rect(x - radius, y - radius, radius*2, radius*2)
+    def __init__(self, worldCoords, screenCoords, radius=5, color=BLUE):
+        self.coordinates = worldCoords
+        self.screenPos = screenCoords
+        
         self.color = color
+        self.radius = radius
 
-    def move(self, newpos):
-        self.rect.center = newpos
+    def update(self, grid, dx, dy):
+        cur_screen_x, cur_screen_y = self.screenPos
 
-    def __str__(self):
-        return f"({self.rect.centerx}, {self.rect.centery})"
+        self.screenPos = (cur_screen_x + dx, cur_screen_y + dy)
+
+        wx, wy = grid.convertToWorld(self.screenPos[0], self.screenPos[1])
+        self.coordinates = (round(wx, 6), round(wy, 6))
+        return None
 
     def __repr__(self):
-        return f"P{self.__str__()}"
+        return f"P{self.coordinates}"
 
+
+#####################
+#     Grid Class    #
+#####################
+
+# Grid class defines functionality for drawing and updating the grid lines for the graph
+# This includes drawing, labeling, and updating the coordinate axes. This class serves as a
+# base class for the graph class
 class Grid:
     def __init__(self, size):
-        x,y = size[0]*2, size[1]*2
-        self.screen = pygame.Surface((x,y))
+        x,y = size[0], size[1]
+        self.screen = pygame.Surface(size)
         self.rect = self.screen.get_rect()
 
-        self.origin = (size[0] // 2, size[1] // 2)
+        self.xOffset = 0
+        self.yOffset = 0
 
-        self.xAxis = pygame.Rect(0, self.rect.top, size[0], size[1])
-        self.yAxis = pygame.Rect(0, self.rect.top, size[0], size[1])
+        self.worldScale = 1
+        self.zoomIndex = 0
+        self.zoomct = 2
+        self.pixelsPerUnit = 60
 
-        self.xRange = (-5, 5)
-        self.yRange = (-5, 5)
-
-        self.scale = 1
-
+        self.zoomFactor = 1
+        
         self.font = pygame.font.SysFont("QuickType 2", 16, bold=True)
 
         self.__drawGrid__()
 
+    def convertToWorld(self, x, y):
+        # Convert screen space coordinates to world space coordinates
+        newX = (((x - self.xOffset) - (self.rect.width // 2)) / self.pixelsPerUnit) * self.worldScale
+        newY = -1 * (((y + self.yOffset) - (self.rect.height // 2)) / self.pixelsPerUnit) * self.worldScale
+        return (newX, newY)
+
+    def convertToScreen(self, x, y):
+        # Convert world space coordinates to screen space coordinates
+        newX = ((self.rect.width // 2) + (x * self.pixelsPerUnit)) + self.xOffset
+        newY = ((self.rect.width // 2) - (y * self.pixelsPerUnit)) - self.yOffset
+        return newX, newY
+
     def __drawGrid__(self):
-        # Draws the x and y axes and the grid lines
         self.screen.fill(WHITE)
-        pygame.draw.line(self.screen, BLACK, self.xAxis.midleft, self.xAxis.midright, 3)
-        pygame.draw.line(self.screen, BLACK, self.yAxis.midtop, self.yAxis.midbottom, 3)
- 
-        dx,dy = self.getOffset()
 
-        valuex = dx // self.xAxis.width
-        valuey = dy // self.yAxis.height
-        x0 = self.xRange[0] + valuex
-        x1 = self.xRange[1] + valuex
+        relativeOffsetX = self.xOffset % self.pixelsPerUnit
+        relativeOffsetY = self.yOffset % self.pixelsPerUnit
 
-        y0 = self.yRange[0] + valuey
-        y1 = self.yRange[1] + valuey
+        centerx = self.rect.centerx + relativeOffsetX
+        centery = self.rect.centery - relativeOffsetY
+
+        screenCoord = self.rect.centerx
+        val = self.convertToWorld(screenCoord,0)[0]
+
+        scaledOffX = self.xOffset // self.pixelsPerUnit
+        scaledOffY = self.yOffset // self.pixelsPerUnit
         
-        numlines = (x1 - x0) + 1
-
-        offsetX = self.xAxis.width / numlines
-        offsetY = self.yAxis.height / numlines
-        curX = (self.xAxis.centerx) % self.xAxis.width
-        curY = (self.yAxis.centery) % self.yAxis.height
-
-        centerPointX = ((x0 + x1) // 2) - valuex
-        centerPointY = ((y0 + y1) // 2) - valuey
-
-        curX = curX - offsetX - dx
-
-        i = -1
-        while curX > self.xAxis.left:
-            pygame.draw.line(self.screen, GREY, (curX, self.yAxis.top), (curX, self.yAxis.bottom), 1)
-
-            v = (centerPointX + i) * self.scale
-            self.__labelAxis__(v, (curX, self.xAxis.centery + 4), True)
-
-            i -= 1
-            curX = curX - offsetX
-
-        curX = (self.xAxis.centerx) % self.xAxis.width
-        curX = curX + offsetX - dx
-
-        i = 1
-        while curX < self.xAxis.right:
-            pygame.draw.line(self.screen, GREY, (curX, self.yAxis.top), (curX, self.yAxis.bottom), 1)
-
-            v = (centerPointX + i) * self.scale
-            self.__labelAxis__(v, (curX, self.xAxis.centery + 4), True)
-
-            i += 1
-            curX = curX + offsetX
-
-        curY = (self.yAxis.centery) % self.yAxis.height
-        curY = curY + offsetY - dy
+        cvalueX = 0 - scaledOffX # world space coordinate value at center of screen
+        cvalueY = 0 - scaledOffY # world space coordinate value at center of screen
         
-        i = -1
-        while curY < self.yAxis.bottom:
-            pygame.draw.line(self.screen, GREY, (self.xAxis.left, curY), (self.xAxis.right, curY), 1)
+        pygame.draw.line(self.screen, GREY, (centerx, self.rect.top), (centerx, self.rect.bottom), 1)
+        pygame.draw.line(self.screen, GREY, (self.rect.left, centery), (self.rect.right, centery), 1)
 
-            v = (centerPointX + i) * self.scale
-            self.__labelAxis__(v, (self.yAxis.centerx - 4, curY), False)
+        self.__labelAxis__(round(cvalueX * self.worldScale, 6), (centerx, self.rect.centery - self.yOffset), True)
+        self.__labelAxis__(round(cvalueY * self.worldScale, 6), (self.rect.centerx + self.xOffset, centery), False)
 
-            i -= 1
-            curY = curY + offsetY
+        numLines = int((self.rect.width // self.pixelsPerUnit) + 2)
 
-        curY = (self.yAxis.centery) % self.yAxis.height
-        curY = curY - offsetY - dy
+        for i in range(numLines):
+            x0 = centerx + ((i+1)*self.pixelsPerUnit)
+            x1 = centerx - ((i+1)*self.pixelsPerUnit)
+            y0 = centery + ((i+1)*self.pixelsPerUnit)
+            y1 = centery - ((i+1)*self.pixelsPerUnit)
 
-        i = 1
-        while curY > self.yAxis.top:
-            pygame.draw.line(self.screen, GREY, (self.xAxis.left, curY), (self.xAxis.right, curY), 1)
+            pygame.draw.line(self.screen, GREY, (x0, self.rect.top), (x0, self.rect.bottom), 1)
+            pygame.draw.line(self.screen, GREY, (x1, self.rect.top), (x1, self.rect.bottom), 1)
+            pygame.draw.line(self.screen, GREY, (self.rect.left, y0), (self.rect.right, y0), 1)
+            pygame.draw.line(self.screen, GREY, (self.rect.left, y1), (self.rect.right, y1), 1)
 
-            v = (centerPointX + i) * self.scale
-            self.__labelAxis__(v, (self.yAxis.centerx - 4, curY), False)
+            v1x = round((cvalueX + i + 1)* self.worldScale, 6)
+            v2x = round((cvalueX - i - 1)* self.worldScale, 6)
+            v1y = round((cvalueY - i - 1)* self.worldScale, 6)
+            v2y = round((cvalueY + i + 1)* self.worldScale, 6)
 
-            i += 1
-            curY = curY - offsetY
+            self.__labelAxis__(v1x, (x0, self.rect.centery - self.yOffset), True)
+            self.__labelAxis__(v2x, (x1, self.rect.centery - self.yOffset), True)
+            self.__labelAxis__(v1y, (self.rect.centerx + self.xOffset, y0), False)
+            self.__labelAxis__(v2y, (self.rect.centerx + self.xOffset, y1), False)
 
         return None
 
     def __labelAxis__(self, value, position, xAxis):
-        # Draws a character 'value' at the specified position. Uses 'xAxis' bool parameter
-        # to determine the offset of the position
-        x,y = position
+        x, y = position
         
         text = self.font.render(f"{value}", True, BLACK)
         textRect = text.get_rect()
+
         if xAxis:
-            if y < self.yAxis.top:
-                y = self.yAxis.top + 2 + textRect.height
-            elif (y + textRect.height) > self.yAxis.bottom:
-                y = self.yAxis.bottom - 2 - textRect.height
+            if y < self.rect.top:
+                y = self.rect.top + 2 + textRect.height
+            elif y > self.rect.bottom - textRect.height:
+                y = self.rect.bottom - 2 - textRect.height
             else:
-                y = y + textRect.height
+                y += textRect.height
             textRect.center = (x, y)
         else:
-            if (x - textRect.width) < self.xAxis.left:
-                x = self.xAxis.left + 2 + textRect.width
-            elif x > self.xAxis.right:
-                x = self.xAxis.right - 2 - textRect.width
+            if x < self.rect.left:
+                x = self.rect.left + 2 + textRect.width
+            elif x > self.rect.right:
+                x = self.rect.right - 2 - textRect.width
             else:
-                x = x - textRect.width
+                x -= textRect.width
             textRect.center = (x, y)
+
+        textRect.height += 2
+        textRect.width += 2
 
         pygame.draw.rect(self.screen, WHITE, textRect)
         self.screen.blit(text, textRect)
         return None
 
-    def getOffset(self):
-        # Returns the offset in the x and y coordinates from the origin. This is used to
-        # reset the grid to (0,0)
-        dx = self.origin[0] - self.yAxis.centerx
-        dy = self.origin[1] - self.xAxis.centery
-        return dx,dy
+    def __zoom__(self, zType):
+        scales = [1, 2, 5]
 
-    def updatePosition(self, dx, dy):
-        # Scroll the grid based on the user's mouse drag, which is specified by dx, dy
-        self.xAxis.centery += dy
-        self.yAxis.centerx += dx
+        if zType == 0:
+            self.zoomct += 1
+        else:
+            self.zoomct -= 1
+
+        zoomFactor = ((self.zoomct * 5) % 50)
+
+        oldppu = self.pixelsPerUnit
+
+        self.pixelsPerUnit = 50 + zoomFactor
+
+        self.zoomFactor = (self.pixelsPerUnit / oldppu)
+
+        self.xOffset = self.xOffset * self.zoomFactor
+        self.yOffset = self.yOffset * self.zoomFactor
+
+        diff = abs(self.pixelsPerUnit - oldppu)
+
+        if (diff > 5):
+
+            if zType == 0:
+                self.zoomIndex -= 1
+            else:
+                self.zoomIndex += 1
+
+            factor = self.zoomIndex // 3
+            index = self.zoomIndex % 3
+
+            self.worldScale = scales[index]
+            if factor != 0:
+                self.worldScale = self.worldScale * (10**factor)
+        
         self.__drawGrid__()
         return None
 
-class Menu:
-    def __init__(self, size, position):
-        self.screen = pygame.Surface(size)
-        self.rect = self.screen.get_rect(center=position)
+    def updatePosition(self, dx, dy):
+        self.xOffset += dx
+        self.yOffset -= dy
 
-class SideMenu(Menu):
-    def __init__(self, screen_size):
-        x = screen_size[0]
-        y = screen_size[1]
-        super(SideMenu, self).__init__((x//4, y), (x//8, y//2))
+        self.__drawGrid__()
+        return None
 
-        self.screen.fill((180, 60, 160))
+#####################
+#   Button Class    #
+#####################
 
-        rectToDraw = pygame.Rect(1, 1, self.rect.width - 2, (y // 6) - 1)
-        pygame.draw.rect(self.screen, WHITE, rectToDraw)
+class Button:
+    def __init__(self, action, buttonSize):
+        self.screen = pygame.Surface(buttonSize)
+        self.screen.fill(DARKGREY)
+        self.fn = action
+
+    def onClick(self):
+        self.fn()
+
+class resetButton(Button):
+    def __init__(self, action, screen_size):
+        super(resetButton, self).__init__(action, (40, 40))
+
+        self.rect = self.screen.get_rect(center=(screen_size[0] - 22, 22))
 
         font = pygame.font.SysFont("QuickType 2", 14, bold=True)
-        text = font.render("ADD POINT", False, BLACK)
-        textRect = text.get_rect(center=rectToDraw.center)
-        textRect.centery = rectToDraw.top + textRect.height + 1
-        self.screen.blit(text, textRect)
+        text1 = font.render("RESET", True, BLACK)
+        text2 = font.render("ZOOM", True, BLACK)
+        textRect1 = text1.get_rect()
+        textRect2 = text2.get_rect()
+        textRect1.midtop = (20, 10)
+        textRect2.midbottom = (20, 30)
 
-        pygame.draw.circle(self.screen, BLACK, rectToDraw.center, 5, 0)
-        self.circleButton = rectToDraw
+        self.screen.blit(text1, textRect1)
+        self.screen.blit(text2, textRect2)
+        
+    def __repr__(self):
+        return "Reset"
 
-    def isClickedOn(self, pos):
-        x,y = pos
+class clearButton(Button):
+    def __init__(self, action, screen_size):
+        super(clearButton, self).__init__(action, (40, 40))
+
+        self.rect = self.screen.get_rect(center=(screen_size[0] - 22, 64))
+
+        font = pygame.font.SysFont("QuickType 2", 14, bold=True)
+        text1 = font.render("CLEAR", True, BLACK)
+        text2 = font.render("POINTS", True, BLACK)
+        textRect1 = text1.get_rect()
+        textRect2 = text2.get_rect()
+        textRect1.midtop = (20, 10)
+        textRect2.midbottom = (20, 30)
+
+        self.screen.blit(text1, textRect1)
+        self.screen.blit(text2, textRect2)
+
+        self.currentClickedPoint = None
+        
+    def __repr__(self):
+        return "Clear"
+
+class zoomInButton(Button):
+    def __init__(self, action, screen_size):
+        super(zoomInButton, self).__init__(action, (40, 40))
+
+        self.rect = self.screen.get_rect(center=(screen_size[0] - 22, 106))
+
+        pygame.draw.line(self.screen, BLACK, (10, 20), (30, 20), 3)
+        pygame.draw.line(self.screen, BLACK, (20, 10), (20, 30), 3)
+
+    def __repr__(self):
+        return "Zoom In"
+
+class zoomOutButton(Button):
+    def __init__(self, action, screen_size):
+        super(zoomOutButton, self).__init__(action, (40, 40))
+
+        self.rect = self.screen.get_rect(center=(screen_size[0] - 22, 148))
+        
+        pygame.draw.line(self.screen, BLACK, (10, 20), (30, 20), 3)
+
+    def __repr__(self):
+        return "Zoom Out"
+
+#####################
+#    Graph Class    #
+#####################
+
+# Graph class extends the grid class in order to provide the graph interface,
+# including the grid lines, labeled axes, buttons, and points
+class Graph(Grid):
+    def __init__(self, screen_size):
+
+        super(Graph, self).__init__(screen_size)
+
+        self.points = []
+
+        self.buttons = []
+
+        self.buttons.append(resetButton(self.reset, screen_size))
+        self.buttons.append(clearButton(self.clear, screen_size))
+        self.buttons.append(zoomInButton(self.zoomIn, screen_size))
+        self.buttons.append(zoomOutButton(self.zoomOut, screen_size))
+
+        self.currentClickedPoint = None   
+        return None
+
+    def onClick(self, position):
+        x, y = position
+
+        for button in self.buttons:
+            if button.rect.collidepoint(x, y):
+                button.onClick()
+                return True
+
+        for point in self.points:
+            if inCircle(point.screenPos, point.radius, position):
+                self.currentClickedPoint = point
+                return False
+
+        self.currentClickedPoint = None
+        
         return False
+
+    def addPoint(self):
+        # Adds a point at the center of the screen in screen space
+        sx, sy = (self.rect.width // 2, self.rect.height // 2)
+        wx, wy = self.convertToWorld(sx, sy)
+        p = Point((wx, wy), (sx, sy))
+
+        self.points.append(p)
+        return None
+
+    def scroll(self, dx, dy):
+        self.updatePosition(dx, dy)
+
+        for point in self.points:
+            point.update(self, dx, dy)
+        return None
+
+    def zoomIn(self):
+        for i in range(4):
+            self.zoom(0)
+
+    def zoomOut(self):
+        for i in range(4):
+            self.zoom(1)
+
+    def zoom(self, zoomType):
+        self.__zoom__(zoomType)
+        for point in self.points:
+            px, py = point.coordinates
+            point.screenPos = self.convertToScreen(px/self.worldScale, py/self.worldScale)
+        return None
+
+    def reset(self):
+        if self.zoomct < 2:
+            zoomType = 0
+        else:
+            zoomType = 1
+        for i in range(abs(self.zoomct - 2)):
+            self.zoom(zoomType)
+        
+        self.scroll(-self.xOffset, self.yOffset)
+        return None
+
+    def dragPoint(self, dx, dy):
+        if self.currentClickedPoint is not None:
+            self.currentClickedPoint.update(self, dx, dy)
+            return True
+        return False
+
+    def clear(self):
+        # Delete all points
+        self.points = []
+        return None
+
+    def displayToScreen(self, screen):
+        screen.blit(self.screen, self.rect)
+
+        for point in self.points:
+            pygame.draw.circle(screen, point.color, point.screenPos, 5, 0)
+
+        for button in self.buttons:
+            screen.blit(button.screen, button.rect)
+        return None
 
 
 #####################
 # Testing Functions #
 #####################
 
-
-def testGraphBG(screen, clock):
+def testGraph(screen, clock):
     tempRect = screen.get_rect() # Get main screen rect object
     screen_size = (tempRect.width, tempRect.height) # Retrieve initial screen size
-    center = (screen_size[0] // 2, screen_size[1] // 2)
 
-    point1 = Point(center) # Create a point in the center of the screen
-    sm = SideMenu(screen_size) # Create side menu object
-    grid = Grid(screen_size) # Create grid object
+    graph = Graph(screen_size) # Create Graph
 
     mouseDown = False # Used to track mouse clicks
-    clickOnCircle = None # If user clicks on a point, that point instance will be stored in this variable
-
-    points = [] # List of all points
-    points.append(point1)
-
-    drawLines = False # Temporary. Toggles lines between points
-    showMenu = False # Boolean variable handles the state of the sideMenu
-
-    x1,y1 = 0,0 # Mouse (x,y) position on the screen from the previous frame
     
     while True:
         screen.fill(WHITE) # Fill screen with white every frame
-        
-        screen.blit(grid.screen, grid.rect) # Draw the x,y axes to the screen
-        
-        for point in points: # Draw each point on the screen
-            pygame.draw.circle(screen, point.color, point.rect.center, 5, 0)
 
-        if drawLines and len(points) > 1: # If drawLines is toggled 'True' => Draw lines between points
-            li = []
-            for point in points:
-                li.append(point.rect.center)
-            li = sortList(li)
-            pygame.draw.lines(screen, (0,0,255), False, li)
+        graph.displayToScreen(screen)
 
-        if showMenu: # If showMenu is True, draw side menu on screen
-            screen.blit(sm.screen, sm.rect)
-
-        x,y = pygame.mouse.get_pos() # Get updated (x,y) mouse position for current frame
+        dx,dy = pygame.mouse.get_rel() # Get updated (x,y) mouse position for current frame
         
         for ev in pygame.event.get(): # Event handling
             if ev.type == KEYDOWN: # If user pressed a key
                 if (ev.key == K_RETURN): # If pressed key was 'Return'/'Enter'
-                    points.append(Point(center))
-                if (ev.key == K_SPACE): # If pressed key was 'space'
-                    if drawLines:
-                        drawLines = False
-                    else:
-                        drawLines = True
-                if (ev.key == K_BACKSPACE): # If pressed key was 'backspace'
-                    if (len(points) > 1):
-                        points.pop(-1)
-                if (ev.key == K_p):
-                    print(points)
-                if (ev.key == K_m): # If pressed key was 'm'
-                    if showMenu:
-                        showMenu = False
-                    else:
-                        showMenu = True
-                if (ev.key == K_r): # If pressed key was 'r'
-                    dx,dy = grid.getOffset()
-                    moveScreen(grid, points, dx, dy)
+                    graph.addPoint()
                 if (ev.key == K_ESCAPE): # If pressed key was 'escape'
                     pygame.quit()
                     sys.exit()
             if (ev.type == MOUSEBUTTONDOWN): # If the user clicked on the screen
-                mouseDown = True
-                for point in points:
-                    if inCircle(point.rect, (x,y)):
-                        clickOnCircle = point
-                        break
+                if (ev.button == 1): # Left click
+                    x,y = pygame.mouse.get_pos()
+                    mouseDown = not graph.onClick((x,y))
+                elif (ev.button == 4): # Scroll wheel
+                    # Zoom in
+                    graph.zoom(0)
+                elif (ev.button == 5): # Scroll wheel
+                    # Zoom out
+                    graph.zoom(1)
+
             if (ev.type == MOUSEBUTTONUP):
-                #print("MOUSE UP")
                 mouseDown = False
-                clickOnCircle = None
+                clickedPointObject = None
+
             if ev.type == QUIT:
                 pygame.quit()
                 sys.exit()
 
         if mouseDown: # If the mouse button is currently down
-            if clickOnCircle:# If clickOnCircle => user is dragging a point
-                clickOnCircle.rect.center = (x,y) # Update the point's position to follow the mouse
-                
-            else: # User is scrolling on the screen
-                dx = x - x1
-                dy = y - y1
-                moveScreen(grid, points, dx, dy)
-
-        x1,y1 = x,y
+            draggingPoint = graph.dragPoint(dx, dy)
+            if not draggingPoint:
+                graph.scroll(dx, dy)
         
         pygame.display.update()
         clock.tick(FPS)
@@ -349,10 +487,11 @@ def testGraphBG(screen, clock):
 def main():
     pygame.init()
 
-    screen = pygame.display.set_mode((600, 600))
+    screen = pygame.display.set_mode((700, 700))
+    pygame.display.set_caption('Polynomial Interpolation Demo')
     clock = pygame.time.Clock()
 
-    testGraphBG(screen, clock)
+    testGraph(screen, clock)
     
     return None
 
