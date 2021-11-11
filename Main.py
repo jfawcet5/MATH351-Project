@@ -60,6 +60,8 @@ def inCircle(pointpos, circleRadius, clickpos):
 #####################
 #    Point Class    #
 #####################
+
+
 class Point:
     def __init__(self, worldCoords, screenCoords, radius=5, color=BLUE):
         self.coordinates = worldCoords
@@ -84,6 +86,7 @@ class Point:
 #####################
 #     Grid Class    #
 #####################
+
 
 # Grid class defines functionality for drawing and updating the grid lines for the graph
 # This includes drawing, labeling, and updating the coordinate axes. This class serves as a
@@ -116,8 +119,8 @@ class Grid:
 
     def convertToScreen(self, x, y):
         # Convert world space coordinates to screen space coordinates
-        newX = ((self.rect.width // 2) + (x * self.pixelsPerUnit)) + self.xOffset
-        newY = ((self.rect.width // 2) - (y * self.pixelsPerUnit)) - self.yOffset
+        newX = (((self.rect.width // 2) + (x * self.pixelsPerUnit / self.worldScale)) + self.xOffset)
+        newY = (((self.rect.width // 2) - (y * self.pixelsPerUnit / self.worldScale)) - self.yOffset)
         return newX, newY
 
     def __drawGrid__(self):
@@ -128,9 +131,6 @@ class Grid:
 
         centerx = self.rect.centerx + relativeOffsetX
         centery = self.rect.centery - relativeOffsetY
-
-        screenCoord = self.rect.centerx
-        val = self.convertToWorld(screenCoord,0)[0]
 
         scaledOffX = self.xOffset // self.pixelsPerUnit
         scaledOffY = self.yOffset // self.pixelsPerUnit
@@ -222,6 +222,8 @@ class Grid:
 
         if (diff > 5):
 
+            oldx = self.convertToWorld(self.xOffset, 0)[0]
+
             if zType == 0:
                 self.zoomIndex -= 1
             else:
@@ -233,6 +235,12 @@ class Grid:
             self.worldScale = scales[index]
             if factor != 0:
                 self.worldScale = self.worldScale * (10**factor)
+
+            newx = self.convertToWorld(self.xOffset, 0)[0]
+
+            ratio = oldx / newx # Ratio should be same for x and y assuming screen size is square
+            self.xOffset *= ratio
+            self.yOffset *= ratio
         
         self.__drawGrid__()
         return None
@@ -244,9 +252,11 @@ class Grid:
         self.__drawGrid__()
         return None
 
+
 #####################
 #   Button Class    #
 #####################
+
 
 class Button:
     def __init__(self, action, buttonSize):
@@ -322,15 +332,43 @@ class zoomOutButton(Button):
     def __repr__(self):
         return "Zoom Out"
 
+class openMenuButton(Button):
+    def __init__(self, action, screen_size):
+        super(openMenuButton, self).__init__(action, (40, 40))
+
+        self.rect = self.screen.get_rect(center=(22, 22))
+        
+        pygame.draw.line(self.screen, BLACK, (10, 15), (30, 15), 2)
+        pygame.draw.line(self.screen, BLACK, (10, 20), (30, 20), 2)
+        pygame.draw.line(self.screen, BLACK, (10, 25), (30, 25), 2)
+
+    def __repr__(self):
+        return "Zoom Out"
+
+class Menu:
+    def __init__(self, screen_size):
+        self.screen = pygame.Surface((screen_size[0] // 4, screen_size[1]))
+
+        self.rect = self.screen.get_rect(topleft = (0,0))
+        self.screen.fill(DARKGREY)
+
+        tempRect = pygame.Rect(2, 2, 40, 40)
+        pygame.draw.rect(self.screen, BLACK, tempRect, 1)
+        pygame.draw.line(self.screen, BLACK, (9, 9), (33,33), 3)
+        pygame.draw.line(self.screen, BLACK, (9, 33), (33,9), 3)
+        return None
+
+
 #####################
 #    Graph Class    #
 #####################
+
 
 # Graph class extends the grid class in order to provide the graph interface,
 # including the grid lines, labeled axes, buttons, and points
 class Graph(Grid):
     def __init__(self, screen_size):
-
+        # Call parent __init__()
         super(Graph, self).__init__(screen_size)
 
         self.points = []
@@ -341,26 +379,90 @@ class Graph(Grid):
         self.buttons.append(clearButton(self.clear, screen_size))
         self.buttons.append(zoomInButton(self.zoomIn, screen_size))
         self.buttons.append(zoomOutButton(self.zoomOut, screen_size))
+        self.buttons.append(openMenuButton(self.toggleMenu, screen_size))
+
+        self.menu = Menu(screen_size)
+        self.menuIsActive = False
 
         self.currentClickedPoint = None   
         return None
 
     def onClick(self, position):
+        ''' This function defines the behavior of the graph object based on the location
+            of the click. If a button was clicked on, then appropriate action will be taken
+            (zoom, clear points, etc.). If a point was clicked on, then the graph prepares
+            to reposition the point based on the mouse movements after the click
+        '''
         x, y = position
 
+        status = False
+
+        # If the menu is currently active, then check if user clicked on menu
+        if self.menuIsActive:
+            if self.menu.rect.collidepoint(position):
+                status = True
+
+        # Iterate through buttons to determine if user clicked on one
         for button in self.buttons:
             if button.rect.collidepoint(x, y):
                 button.onClick()
-                return True
+                status = True
+                break
 
+        # If user clicked on the menu or a button, then exit function here,
+        # as the rest of this function deals with dragging points
+        if status:
+            return True
+
+        # Check if user is clicking on a point
         for point in self.points:
             if inCircle(point.screenPos, point.radius, position):
+                # Save the point that was clicked on in the 'self.currentClickedPoint' object, in
+                # order to move the point when the 'self.dragPoint()' method is called externally
                 self.currentClickedPoint = point
                 return False
 
+        # If user is not clicking on a point, then set saved point reference to None in order to avoid
+        # accidentally dragging a point that the user is no longer clicking on
         self.currentClickedPoint = None
         
         return False
+
+    def plot(self):
+        ''' This function draws the interpolating polynomial to the screen. It does so by plotting
+            a point for every pixel in the screen using the calculated interpolating polynomial and
+            then draws a tiny line between each of these points
+        '''
+        if len(self.points) > 1:
+            # 'data' is a list of the form: [(x1, f(x1)), (x1, f(x1)), ...], where each tuple (xi, f(xi))
+            # represents a coordinate in screen space to be drawn to the screen
+            data = []
+
+            # sx1, sx2 define the range of points to be plotted. sx1 is the x coordinate of the leftmost pixel
+            # in screen space, and x2 is the x coordinate of the rightmost pixel in screen space
+            sx1, sx2 = self.rect.left, self.rect.right
+
+            # sx stands for 'screen x', which is the x coordinate in screen space to be plotted
+            for sx in range(sx1, sx2): # iterate from x1 to x2
+                wx = self.convertToWorld(sx, 0)[0] # convert current screen coordinate 'sx' to a world space coordinate 'wx'
+
+                # This following line will end up looking like: wy = P(wx), where P() is the interpolating
+                # polynomial. For now, a default polynomial of degree 6 is used
+                wy = 0.5*(wx**6) - 2*(wx**5) + 3*(wx**4) - 0.5*(wx**3) - 2*(wx**2) + wx - 1
+
+                # store (screen space x, screen space f(x)) in a tuple called 'c'
+                c = (sx, self.convertToScreen(0, wy)[1])
+                # append the coordinate 'c' to the list of coordinates 'data'
+                data.append(c)
+
+            # Draw a line between each of the plotted points
+            pygame.draw.lines(self.screen, (0,0,255), False, data, 2)
+        return None
+            
+
+    def toggleMenu(self):
+        self.menuIsActive = not self.menuIsActive
+        return None
 
     def addPoint(self):
         # Adds a point at the center of the screen in screen space
@@ -373,27 +475,43 @@ class Graph(Grid):
 
     def scroll(self, dx, dy):
         self.updatePosition(dx, dy)
+        self.plot()
 
         for point in self.points:
             point.update(self, dx, dy)
         return None
 
     def zoomIn(self):
+        ''' self.zoomIn() implements the functionality of the 'zoom in' button at the
+            top right of the graph. It uses the self.zoom() function to avoid redundancy of code
+        '''
         for i in range(4):
             self.zoom(0)
 
     def zoomOut(self):
+        ''' self.zoomOut() implements the functionality of the 'zoom out' button at the
+            top right of the graph. It uses the self.zoom() function to avoid redundancy of code
+        '''
         for i in range(4):
             self.zoom(1)
 
     def zoom(self, zoomType):
+        ''' self.zoom implements a single zoom in/out, based on the grid.__zoom__() implementation.
+            This function is called from 3 different sources: the self.zoomIn() function, self.zoomOut()
+            function, and it is called for every movement of the user's mouse scroll wheel
+        '''
         self.__zoom__(zoomType)
         for point in self.points:
             px, py = point.coordinates
-            point.screenPos = self.convertToScreen(px/self.worldScale, py/self.worldScale)
+            point.screenPos = self.convertToScreen(px, py)
+        self.plot()
         return None
 
     def reset(self):
+        ''' Resets the position and scale of the graph back to the default.
+            It does this by reversing the current zoom, and setting the offset
+            to 0
+        '''
         if self.zoomct < 2:
             zoomType = 0
         else:
@@ -405,17 +523,26 @@ class Graph(Grid):
         return None
 
     def dragPoint(self, dx, dy):
+        ''' If the user is clicking/holding on a point object, update the
+            point's position based on the movement of the mouse while
+            the user holds the left mouse button down
+        '''
         if self.currentClickedPoint is not None:
             self.currentClickedPoint.update(self, dx, dy)
             return True
         return False
 
     def clear(self):
-        # Delete all points
+        ''' Deletes all of the user-created points from the graph
+        '''
         self.points = []
+        self.__drawGrid__()
         return None
 
     def displayToScreen(self, screen):
+        ''' Copy the graph's local screen onto the main pygame display 'screen'
+            in order to display the graph to the window
+        '''
         screen.blit(self.screen, self.rect)
 
         for point in self.points:
@@ -423,6 +550,11 @@ class Graph(Grid):
 
         for button in self.buttons:
             screen.blit(button.screen, button.rect)
+
+        self.plot()
+
+        if self.menuIsActive:
+            screen.blit(self.menu.screen, self.menu.rect)
         return None
 
 
@@ -452,6 +584,8 @@ def testGraph(screen, clock):
                 if (ev.key == K_ESCAPE): # If pressed key was 'escape'
                     pygame.quit()
                     sys.exit()
+                if (ev.key == K_p):
+                    graph.plot()
             if (ev.type == MOUSEBUTTONDOWN): # If the user clicked on the screen
                 if (ev.button == 1): # Left click
                     x,y = pygame.mouse.get_pos()
