@@ -35,6 +35,7 @@ GREY = (150,150,150)
 DARKGREY = (120,120,120)
 BLUE = (50, 20, 170)
 RED = (255, 10, 10)
+GREEN = (10, 200, 10)
 
 DEBUG = False
 
@@ -69,6 +70,7 @@ class Point:
         
         self.color = color
         self.radius = radius
+        self.selected = False
 
     def update(self, grid, dx, dy):
         cur_screen_x, cur_screen_y = self.screenPos
@@ -78,6 +80,17 @@ class Point:
         wx, wy = grid.convertToWorld(self.screenPos[0], self.screenPos[1])
         self.coordinates = (round(wx, 6), round(wy, 6))
         return None
+
+    def select(self, setValue=None):
+        if setValue is not None:
+            self.selected = not setValue
+        
+        if self.selected:
+            self.color = BLUE
+            self.selected = False
+        else:
+            self.color = GREEN
+            self.selected = True
 
     def __repr__(self):
         return f"P{self.coordinates}"
@@ -241,15 +254,11 @@ class Grid:
             ratio = oldx / newx # Ratio should be same for x and y assuming screen size is square
             self.xOffset *= ratio
             self.yOffset *= ratio
-        
-        self.__drawGrid__()
         return None
 
     def updatePosition(self, dx, dy):
         self.xOffset += dx
         self.yOffset -= dy
-
-        self.__drawGrid__()
         return None
 
 
@@ -343,21 +352,124 @@ class openMenuButton(Button):
         pygame.draw.line(self.screen, BLACK, (10, 25), (30, 25), 2)
 
     def __repr__(self):
-        return "Zoom Out"
+        return "Open Menu"
+
+class addPointButton(Button):
+    def __init__(self, action, screen_size):
+        super(addPointButton, self).__init__(action, (40, 40))
+
+        self.rect = self.screen.get_rect(center=(64, 22))
+
+        self.selected = False
+        self.__draw__()
+
+    def __draw__(self):
+        self.screen.fill(DARKGREY)
+        #pygame.draw.circle(self.screen, BLUE, (self.rect.width //2, self.rect.height // 2), 7)
+
+        font = pygame.font.SysFont("QuickType 2", 14, bold=True)
+        text1 = font.render("ADD", True, BLACK)
+        text2 = font.render("POINTS", True, BLACK)
+        textRect1 = text1.get_rect()
+        textRect2 = text2.get_rect()
+        textRect1.midtop = (20, 10)
+        textRect2.midbottom = (20, 30)
+
+        self.screen.blit(text1, textRect1)
+        self.screen.blit(text2, textRect2)
+
+        if self.selected:
+            borderRect = pygame.Rect(0, 0, self.rect.width - 1, self.rect.height - 1)
+            pygame.draw.rect(self.screen, (255,0,0), borderRect, 2)
+
+    def onClick(self):
+        if self.selected:
+            self.selected = False
+        else:
+            self.selected = True
+        self.__draw__()
+        self.fn()
+
+    def __repr__(self):
+        return "Add point"
+
+class deletePointButton(Button):
+    def __init__(self, action, screen_size):
+        super(deletePointButton, self).__init__(action, (40, 40))
+
+        self.rect = self.screen.get_rect(center=(106, 22))
+
+        self.__draw__()
+
+    def __draw__(self):
+        self.screen.fill(DARKGREY)
+        #pygame.draw.circle(self.screen, BLUE, (self.rect.width //2, self.rect.height // 2), 7)
+
+        font = pygame.font.SysFont("QuickType 2", 14, bold=True)
+        text1 = font.render("DELETE", True, BLACK)
+        text2 = font.render("POINT", True, BLACK)
+        textRect1 = text1.get_rect()
+        textRect2 = text2.get_rect()
+        textRect1.midtop = (20, 10)
+        textRect2.midbottom = (20, 30)
+
+        self.screen.blit(text1, textRect1)
+        self.screen.blit(text2, textRect2)
+
+    def __repr__(self):
+        return "delete point"
 
 class Menu:
     def __init__(self, screen_size):
         self.screen = pygame.Surface((screen_size[0] // 4, screen_size[1]))
 
         self.rect = self.screen.get_rect(topleft = (0,0))
+
+        self.pointDisplayRects = []
+
+        self.selected = None
+
+        self.drawBG()
+        return None
+
+    def drawBG(self):
         self.screen.fill(DARKGREY)
 
         tempRect = pygame.Rect(2, 2, 40, 40)
         pygame.draw.rect(self.screen, BLACK, tempRect, 1)
         pygame.draw.line(self.screen, BLACK, (9, 9), (33,33), 3)
         pygame.draw.line(self.screen, BLACK, (9, 33), (33,9), 3)
+
+    def onClick(self, position):
+        for rect,point in self.pointDisplayRects:
+            if rect.collidepoint(position[0], position[1]):
+                self.selected = (rect, point)
+                return point
+        self.selected = None
         return None
 
+    def drawPoint(self, pointsList=[]):
+        self.drawBG()
+
+        self.pointDisplayRects = []
+
+        font = pygame.font.SysFont("QuickType 2", 18, bold=True)
+        
+        rect = pygame.Rect(2, 44, self.rect.width - 4, 40)
+        for point in pointsList:
+            x,y = point.coordinates
+            pygame.draw.rect(self.screen, WHITE, rect)
+
+            temp = rect.copy()
+            self.pointDisplayRects.append((temp, point))
+
+            if point.selected:
+                pygame.draw.rect(self.screen, GREEN, rect, 2)
+            
+            text = font.render(f"{round(x,6), round(y,6)}", True, BLACK)
+            textRect = text.get_rect(center=(rect.centerx, rect.centery))
+            self.screen.blit(text, textRect)
+            rect.centery += 42
 
 #####################
 #    Graph Class    #
@@ -379,20 +491,26 @@ class Graph(Grid):
         self.buttons.append(clearButton(self.clear, screen_size))
         self.buttons.append(zoomInButton(self.zoomIn, screen_size))
         self.buttons.append(zoomOutButton(self.zoomOut, screen_size))
+        self.buttons.append(deletePointButton(lambda : (), screen_size))
         self.buttons.append(openMenuButton(self.toggleMenu, screen_size))
+        self.buttons.append(addPointButton(lambda : (), screen_size))
 
         self.menu = Menu(screen_size)
         self.menuIsActive = False
 
-        self.currentClickedPoint = None   
+        self.currentClickedPoint = None
+        self.selectedPoint = None
+        self.clickDownPosition = (0,0)
         return None
 
-    def onClick(self, position):
+    def onClickDown(self, position):
         ''' This function defines the behavior of the graph object based on the location
-            of the click. If a button was clicked on, then appropriate action will be taken
-            (zoom, clear points, etc.). If a point was clicked on, then the graph prepares
-            to reposition the point based on the mouse movements after the click
+            of the mouse when the left mouse button was pressed down. If a button was clicked on,
+            then appropriate action will be taken (zoom, clear points, etc.). If a point was
+            clicked on, then the graph prepares to reposition the point based on the mouse movements
+            after the click
         '''
+        self.clickDownPosition = position
         x, y = position
 
         status = False
@@ -405,6 +523,9 @@ class Graph(Grid):
         # Iterate through buttons to determine if user clicked on one
         for button in self.buttons:
             if button.rect.collidepoint(x, y):
+                if type(button) == deletePointButton:
+                    if self.selectedPoint is not None:
+                        self.points.remove(self.selectedPoint)
                 button.onClick()
                 status = True
                 break
@@ -427,6 +548,43 @@ class Graph(Grid):
         self.currentClickedPoint = None
         
         return False
+
+    def onClickUp(self, position):
+
+        if self.menuIsActive:
+            if self.menu.rect.collidepoint(position[0], position[1]):
+                pointToSelect = self.menu.onClick(position)
+                if pointToSelect is not None:
+                    for point in self.points:
+                        if point == pointToSelect:
+                            self.selectPoint(point)
+                        else:
+                            point.select(False)
+                return None
+
+        for button in self.buttons:
+            if button.rect.collidepoint(position[0], position[1]):
+                self.deselectPoints()
+                return None
+        
+        dx = abs(position[0] - self.clickDownPosition[0])
+        dy = abs(position[1] - self.clickDownPosition[1])
+
+        for point in self.points:
+            if inCircle(point.screenPos, point.radius, position):
+                if dx < 4 and dy < 4:
+                    if self.selectedPoint is not None and self.selectedPoint != point:
+                        self.selectedPoint.select(False)
+                    self.selectPoint(point)
+                return False
+
+        if dx < 4 and dy < 4:
+            addPointButton = self.buttons[-1]
+            if addPointButton.selected:
+                self.addPoint(position[0], position[1])
+
+        self.deselectPoints()
+        return True
 
     def plot(self):
         ''' This function draws the interpolating polynomial to the screen. It does so by plotting
@@ -462,16 +620,47 @@ class Graph(Grid):
 
     def toggleMenu(self):
         self.menuIsActive = not self.menuIsActive
+        if self.menuIsActive:
+            addPointButton= self.buttons[-1]
+            deletePointButton = self.buttons[-3]
+            addPointButton.rect.left += self.menu.rect.width - 42
+            deletePointButton.rect.left += self.menu.rect.width - 42
+        else:
+            addPointButton= self.buttons[-1]
+            deletePointButton = self.buttons[-3]
+            addPointButton.rect.left -= self.menu.rect.width - 42
+            deletePointButton.rect.left -= self.menu.rect.width - 42
         return None
 
-    def addPoint(self):
+    def addPoint(self, x=math.inf, y=math.inf):
         # Adds a point at the center of the screen in screen space
-        sx, sy = (self.rect.width // 2, self.rect.height // 2)
-        wx, wy = self.convertToWorld(sx, sy)
+        if x != math.inf and y != math.inf:
+            sx, sy = x,y
+            wx, wy = self.convertToWorld(sx, sy)
+        else:
+            sx, sy = (self.rect.width // 2, self.rect.height // 2)
+            wx, wy = self.convertToWorld(sx, sy)
         p = Point((wx, wy), (sx, sy))
 
         self.points.append(p)
+        self.menu.drawPoint(self.points)
         return None
+
+    def selectPoint(self, point):
+        point.select()
+        if point.selected == True:
+            self.selectedPoint = point
+        else:
+            if self.selectedPoint is not None:
+                self.selectedPoint = None
+        return None
+
+    def deselectPoints(self):
+        '''
+        '''
+        for point in self.points:
+            point.select(False)
+        self.selectedPoint = None
 
     def scroll(self, dx, dy):
         self.updatePosition(dx, dy)
@@ -529,6 +718,7 @@ class Graph(Grid):
         '''
         if self.currentClickedPoint is not None:
             self.currentClickedPoint.update(self, dx, dy)
+            self.menu.drawPoint(self.points)
             return True
         return False
 
@@ -536,24 +726,26 @@ class Graph(Grid):
         ''' Deletes all of the user-created points from the graph
         '''
         self.points = []
-        self.__drawGrid__()
         return None
 
     def displayToScreen(self, screen):
         ''' Copy the graph's local screen onto the main pygame display 'screen'
             in order to display the graph to the window
         '''
+        self.__drawGrid__()
+        self.plot()
         screen.blit(self.screen, self.rect)
 
         for point in self.points:
             pygame.draw.circle(screen, point.color, point.screenPos, 5, 0)
 
         for button in self.buttons:
+            if type(button) == deletePointButton and self.selectedPoint is None:
+                continue
             screen.blit(button.screen, button.rect)
 
-        self.plot()
-
         if self.menuIsActive:
+            self.menu.drawPoint(self.points)
             screen.blit(self.menu.screen, self.menu.rect)
         return None
 
@@ -579,17 +771,13 @@ def testGraph(screen, clock):
         
         for ev in pygame.event.get(): # Event handling
             if ev.type == KEYDOWN: # If user pressed a key
-                if (ev.key == K_RETURN): # If pressed key was 'Return'/'Enter'
-                    graph.addPoint()
                 if (ev.key == K_ESCAPE): # If pressed key was 'escape'
                     pygame.quit()
                     sys.exit()
-                if (ev.key == K_p):
-                    graph.plot()
             if (ev.type == MOUSEBUTTONDOWN): # If the user clicked on the screen
                 if (ev.button == 1): # Left click
                     x,y = pygame.mouse.get_pos()
-                    mouseDown = not graph.onClick((x,y))
+                    mouseDown = not graph.onClickDown((x,y))
                 elif (ev.button == 4): # Scroll wheel
                     # Zoom in
                     graph.zoom(0)
@@ -598,8 +786,11 @@ def testGraph(screen, clock):
                     graph.zoom(1)
 
             if (ev.type == MOUSEBUTTONUP):
-                mouseDown = False
-                clickedPointObject = None
+                if ev.button == 1:
+                    mouseDown = False
+                    clickedPointObject = None
+                    x,y = pygame.mouse.get_pos()
+                    graph.onClickUp((x,y))
 
             if ev.type == QUIT:
                 pygame.quit()
