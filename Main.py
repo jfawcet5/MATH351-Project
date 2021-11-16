@@ -46,8 +46,6 @@ GREEN = (10, 200, 10)
 ####################
 
 def inCircle(pointpos, circleRadius, clickpos):
-    #x,y = pos
-    #print(f"px: {pointpos[0]}, cx: {clickpos[0]}")
     collideX = abs(clickpos[0] - pointpos[0]) <= circleRadius #x > rect.left and x < rect.right
     collideY = abs(clickpos[1] - pointpos[1]) <= circleRadius #y > rect.top and y < rect.bottom
     return collideX and collideY
@@ -485,7 +483,7 @@ class Menu:
         self.drawBG()
 
     def __drawPointBGs__(self):
-        font = pygame.font.SysFont("QuickType 2", 18, bold=True)
+        font = pygame.font.SysFont("Courier New", 12, bold=True)
         self.pointDisplayRects = []
 
         top = self.scrollRect.top - 44
@@ -559,7 +557,8 @@ class Graph(Grid):
         screen.blit(self.screen, self.rect)
 
         for point in self.points:
-            pygame.draw.circle(screen, point.color, point.screenPos, 5, 0)
+            x,y = point.screenPos
+            pygame.draw.circle(screen, point.color, (int(x+1), int(y)), 5, 0)
 
         for button in self.buttons:
             if type(button) == deletePointButton and self.selectedPoint is None:
@@ -591,8 +590,9 @@ class Graph(Grid):
                 wx = self.convertToWorld(sx, 0)[0] # convert current screen coordinate 'sx' to a world space coordinate 'wx'
 
                 # This following line will end up looking like: wy = P(wx), where P() is the interpolating
-                # polynomial. For now, a default polynomial of degree 6 is used
-                wy = 0.5*(wx**6) - 2*(wx**5) + 3*(wx**4) - 0.5*(wx**3) - 2*(wx**2) + wx - 1
+                # polynomial. For now, a sample interpolating polynomial is hard coded
+                # Sample interpolating polynomial for points: (-5,2), (-4,0.5), (-3,4), (-1,0)
+                wy = 2 - 1.5*(wx + 5) + 2.5*(wx + 5)*(wx + 4) - 1.08333333*(wx + 5)*(wx + 4)*(wx + 3) + 0.212698*(wx + 5)*(wx + 4)*(wx + 3)*(wx + 1)
 
                 # store (screen space x, screen space f(x)) in a tuple called 'c'
                 c = (sx, self.convertToScreen(0, wy)[1])
@@ -752,12 +752,12 @@ class Graph(Grid):
             if button.rect.collidepoint(x, y):
                 button.onClick()
                 self.objectClickedOn = 0
-                return
+                return None
 
         if self.menu.active:
             if self.menu.rect.collidepoint(position):
                 self.objectClickedOn = self.menu.onClick(position)
-                return     
+                return None    
 
         for point in self.points:
             if inCircle(point.screenPos, point.radius, position):
@@ -765,7 +765,7 @@ class Graph(Grid):
                 # order to move the point when the 'self.dragPoint()' method is called externally
                 self.currentClickedPoint = point
                 self.objectClickedOn = 2
-                return 2
+                return None
 
         self.currentClickedPoint = None
         self.objectClickedOn = 3
@@ -895,3 +895,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
