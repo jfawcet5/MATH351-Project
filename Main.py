@@ -31,7 +31,7 @@ from pygame.locals import (
     QUIT,
 )
 
-FPS = 60
+FPS = 30
 
 BLACK = (0,0,0)
 WHITE = (255,255,255)
