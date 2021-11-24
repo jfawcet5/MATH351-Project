@@ -32,7 +32,7 @@ def newtonsIP(X, Y, x):
     n = len(Y) - 1
     table = difTable(X, Y)
 
-    printTable(table)
+    #printTable(table)
     
     result = table[0][n]
     for i in range(1, n+1):
