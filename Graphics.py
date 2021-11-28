@@ -729,6 +729,9 @@ class Graph(Grid):
                 if point.active:
                     x,y = point.coordinates
 
+                    if x in xs: # If the x values of the points are not distinct, then we can't calculate the interpolating polynomial
+                        return None
+
                     xs.append(x)
                     ys.append(y)
 
