@@ -388,6 +388,36 @@ class openMenuButton(Button):
         pygame.draw.line(self.screen, BLACK, (10, 20), (30, 20), 2)
         pygame.draw.line(self.screen, BLACK, (10, 25), (30, 25), 2)
 
+class openBottomMenuButton(Button):
+    def __init__(self, action, screen_size):
+        super(openBottomMenuButton, self).__init__(action, (40, 40))
+
+        self.rect = self.screen.get_rect(center=(screen_size[0] - 22, screen_size[1] - 22))
+
+        self.selected = False
+
+        self.__draw__()
+
+    def __draw__(self):
+        self.screen.fill(DARKGREY)
+        if not self.selected:
+            font = pygame.font.SysFont("QuickType 2", 18, bold=True)
+            text = font.render("P(X)", True, BLACK)
+            textRect = text.get_rect()
+            textRect.center = (20, 20)
+            self.screen.blit(text, textRect)
+        else:
+            pygame.draw.line(self.screen, BLACK, (10, 10), (30, 30), 2)
+            pygame.draw.line(self.screen, BLACK, (10, 30), (30, 10), 2)
+
+    def onClick(self):
+        if self.selected:
+            self.selected = False
+        else:
+            self.selected = True
+        self.__draw__()
+        self.fn()
+
 class addPointButton(Button):
     def __init__(self, action, screen_size):
         super(addPointButton, self).__init__(action, (40, 40))
@@ -452,7 +482,7 @@ class deletePointButton(Button):
 ################################################################################################
 ################################################################################################
 
-class Menu:
+class SideMenu:
     def __init__(self, screen_size):
         self.screen = pygame.Surface((screen_size[0] // 4, screen_size[1]))
 
@@ -587,6 +617,32 @@ class Menu:
         self.pointList = pointsList
         self.drawBG()
 
+class BottomMenu:
+    def __init__(self, screen_size):
+        self.screen = pygame.Surface((screen_size[0], screen_size[1] // 8))
+
+        self.rect = self.screen.get_rect(bottomleft = (0,screen_size[0]))
+
+        self.active = False
+
+        self.displayText = "P(X) = 0"
+
+        self.drawBG()
+        return None
+
+    def drawBG(self):
+        self.screen.fill((120, 120, 255))
+        fillRect = pygame.Rect(4, 8, self.rect.width - 8, self.rect.height - 16)
+        pygame.draw.rect(self.screen, WHITE, fillRect)
+
+        font = pygame.font.SysFont("Courier New", 30, bold=True)
+        text = font.render(self.displayText, True, BLACK)
+        textRect = text.get_rect()
+        textRect.center = (self.rect.centerx, self.rect.height // 2)
+        self.screen.blit(text, textRect)
+        return None
+        
+
 
 ################################################################################################
 ################################################################################################
@@ -610,11 +666,13 @@ class Graph(Grid):
         self.buttons.append(clearButton(self.clearAllPoints, screen_size))
         self.buttons.append(zoomInButton(self.zoomIn, screen_size))
         self.buttons.append(zoomOutButton(self.zoomOut, screen_size))
+        self.buttons.append(openBottomMenuButton(self.toggleBottomMenu, screen_size))
         self.buttons.append(deletePointButton(self.deleteSelectedPoint, screen_size))
         self.buttons.append(openMenuButton(self.toggleMenu, screen_size))
         self.buttons.append(addPointButton(lambda : (), screen_size))
 
-        self.menu = Menu(screen_size)
+        self.menu = SideMenu(screen_size)
+        self.bottomMenu = BottomMenu(screen_size)
 
         self.currentClickedPoint = None
         self.selectedPoint = None
@@ -648,6 +706,9 @@ class Graph(Grid):
         if self.menu.active:
             self.menu.updatePoints(self.points)
             screen.blit(self.menu.screen, self.menu.rect)
+
+        if self.bottomMenu.active:
+            screen.blit(self.bottomMenu.screen, self.bottomMenu.rect)
         return None
 
     # Important: This method draws the interpolating polynomial
@@ -752,6 +813,17 @@ class Graph(Grid):
             deletePointButton.rect.left -= self.menu.rect.width - 42
         return None
 
+    def toggleBottomMenu(self):
+        self.bottomMenu.active = not self.bottomMenu.active
+
+        toggleMenuButton = self.buttons[-4]
+        if self.bottomMenu.active:
+            toggleMenuButton.rect.centery -= self.bottomMenu.rect.height
+        else:
+            toggleMenuButton.rect.centery += self.bottomMenu.rect.height
+            pass
+        return None
+
     ################################
     #  Methods for updating points #
     ################################
@@ -832,12 +904,7 @@ class Graph(Grid):
 ##                                Input Manager Class                                         ##
 ################################################################################################
 ################################################################################################
-''' Functionality Still needed:
-
-        - Add support for bottom menu (after bottom menu class is implemented)
-
-        - Implement ability to use scroll wheel in side menu to scroll up/down through list of points
-'''
+    
 
 class InputManager:
     def __init__(self, screen_size):
@@ -865,6 +932,7 @@ class InputManager:
         points = self.graph.points
 
         sidemenu = self.graph.menu
+        bottomMenu = self.graph.bottomMenu
 
         # Check if clicked on a button
         for button in buttons:
@@ -877,6 +945,9 @@ class InputManager:
                 return sidemenu
 
         # Check bottom menu
+        if bottomMenu.active:
+            if bottomMenu.rect.collidepoint(x, y):
+                return bottomMenu
 
         # Check if clicked on a point
         for point in points:
@@ -915,7 +986,7 @@ class InputManager:
                 elif isinstance(self.objectClickedOn, Point): # User clicked on a point
                     self.graph.selectPoint(self.objectClickedOn)
 
-                elif isinstance(self.objectClickedOn, Menu): # User clicked on the side menu
+                elif isinstance(self.objectClickedOn, SideMenu): # User clicked on the side menu
                     if self.objectClickedOn.active:
                         selectedPoint = self.objectClickedOn.clickOnPointDisplay(clickPosition)
                         if selectedPoint is not None:
@@ -940,7 +1011,7 @@ class InputManager:
         if clickedObject is None or isinstance(clickedObject, Point):
             self.graph.zoom(scrollType)
 
-        elif isinstance(clickedObject, Menu):
+        elif isinstance(clickedObject, SideMenu):
             if scrollType == 0:
                 dy = -10
             else:
@@ -996,7 +1067,7 @@ class InputManager:
             elif isinstance(self.objectClickedOn, Point): # If the user is dragging a point
                 self.graph.movePoint(self.objectClickedOn, changeInMousePosition)
                 
-            elif isinstance(self.objectClickedOn, Menu): # If the user is dragging the side menu scroll bar
+            elif isinstance(self.objectClickedOn, SideMenu): # If the user is dragging the side menu scroll bar
                 self.graph.menu.scroll(dy)
         return None
 
