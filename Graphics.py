@@ -54,19 +54,24 @@ def roundToNearest(number, base):
     return base * round(number / base)
 
 def isValidNumber(string):
+    # Try-Except used to prevent program from crashing when trying to determine if 'string' contains a valid number
     try:
-        if '.' in string:
-            temp = string.split(".")
-            print(temp)
-            if len(temp) != 2:
-                return False
-            else:
-                for v in temp:
-                    float(v)
-        else:
-            float(string)
+        if '.' in string: # Number is of the form "x.y" (ex: "3.5")
+            temp = string.split(".") # Split string on '.' to obtain a list of the form ['x', 'y']
 
-    except Exception:
+            if len(temp) != 2: # If we have an invalid floating point number EX: "x.", "x.y.z", etc.
+                return False
+            
+            else: # If we have a valid floating point then check to make sure 'x' and 'y' are valid
+                if '-' in temp[1]: # Make sure we dont have number of the form: "x.-y" or "x.y-"
+                    return False
+                
+                for v in temp: # Try converting "x" and "y" to floats. If this fails, an exception is raised
+                    float(v)
+        else: # If number is not of the form: "x.y", then we can try to directly convert it to a float
+            float(string) # If this fails, 'string' is not a valid number
+
+    except Exception: # If an exception is raised, 'string' is not a valid number so we return False
         return False
 
     return True
@@ -525,18 +530,16 @@ class Menu:
                 t = t[:index+1] + char + t[index+1:]
             x = t.replace("(", "").replace(")", "").replace(" ", "")
             x = x.split(",")
-            if isValidNumber(x[0]) and isValidNumber(x[1]):
-                print('valid')
-                point = self.selected[1]
-                point.active = True
-                point.coordinates = (float(x[0]), float(x[1]))
-                point.str = t
-            else:
-                print('invalid')
-                point = self.selected[1]
-                print(t)
-                point.str = t
-                point.active = False
+
+            point = self.selected[1] # Store current selected point in 'point'
+            point.str = t # Update the point's display string
+            
+            if isValidNumber(x[0]) and isValidNumber(x[1]): # If the current point has valid coordinates
+                point.active = True # Set the point to be active
+                point.coordinates = (float(x[0]), float(x[1])) # Update the point's coordinates
+                
+            else: # Else: the point does not have valid coordinates
+                point.active = False # Set the point to be inactive
             return point
 
     def scroll(self, dy): # Semi-Functional - Needs fixing
@@ -662,10 +665,11 @@ class Graph(Grid):
             ys = []
 
             for point in self.points:
-                x,y = point.coordinates
+                if point.active:
+                    x,y = point.coordinates
 
-                xs.append(x)
-                ys.append(y)
+                    xs.append(x)
+                    ys.append(y)
 
             # sx1, sx2 define the range of points to be plotted. sx1 is the x coordinate of the leftmost pixel
             # in screen space, and x2 is the x coordinate of the rightmost pixel in screen space
@@ -932,17 +936,23 @@ class InputManager:
         ''' This method determines what happens when the mouse scroll wheel is moved
         '''
         clickedObject = self.getClickedObject(mousePosition)
-        
-        if scrollType == 0:
-            if clickedObject is None or isinstance(clickedObject, Point):
-                self.graph.zoom(0)
-        else:
-            if clickedObject is None or isinstance(clickedObject, Point):
-                self.graph.zoom(1)
+
+        if clickedObject is None or isinstance(clickedObject, Point):
+            self.graph.zoom(scrollType)
+
+        elif isinstance(clickedObject, Menu):
+            if scrollType == 0:
+                dy = -10
+            else:
+                dy = 10
+            self.graph.menu.scroll(dy)
         return None
 
     def pressKey(self, ev):
         ''' This method determines what happens when specific keyboard keys are pressed
+
+            It takes a pygame KEYDOWN event as an argument, reads the key associated with
+            the event, and takes the appropriate action based on the key
         '''
         key = ev.key
         if key == K_RIGHT:
@@ -953,7 +963,7 @@ class InputManager:
             if self.graph.menu.active:
                 self.graph.menu.moveCursor(0)
 
-        if ev.unicode.isdigit() or ev.unicode == "." or key == K_BACKSPACE:
+        if ev.unicode.isdigit() or ev.unicode == "." or ev.unicode == "-" or key == K_BACKSPACE:
             if self.graph.menu.active:
                 if key == K_BACKSPACE: # User is deleting a character
                     updatedPoint = self.graph.menu.insertChar("")
