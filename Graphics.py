@@ -734,7 +734,7 @@ class Graph(Grid):
 
                     xs.append(x)
                     ys.append(y)
-
+        
             # sx1, sx2 define the range of points to be plotted. sx1 is the x coordinate of the leftmost pixel
             # in screen space, and x2 is the x coordinate of the rightmost pixel in screen space
             sx1, sx2 = self.rect.left, self.rect.right
@@ -752,6 +752,7 @@ class Graph(Grid):
 
             # Draw a line between each of the plotted points
             pygame.draw.lines(self.screen, RED, False, data, 2)
+
         return None
 
     ##################################
