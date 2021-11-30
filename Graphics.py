@@ -113,7 +113,7 @@ def formatNumberString(string):
             newStr = '{:d}'.format(int(float(newStr)))
     else:
         if ScientificNotation:
-            newStr = '{0.4e}'.format(float(newStr))
+            newStr = '{:0.4e}'.format(float(newStr))
         else:
             newStr = '{:0.4f}'.format(float(newStr))
 
@@ -713,14 +713,14 @@ class BottomMenu:
         self.fontSize = 28
 
         scrollBarPosition = 0
-        self.scrollRect = pygame.Rect(0, self.rect.height - 17, 30, 17)
+        self.scrollRect = pygame.Rect(0, self.rect.height - 19, 30, 17)
 
         self.drawBG()
         return None
 
     def drawBG(self):
         self.screen.fill((120, 120, 255))
-        fillRect = pygame.Rect(4, 8, self.rect.width - 8, self.rect.height - 28)
+        fillRect = pygame.Rect(4, 8, self.rect.width - 8, self.rect.height - 30)
         pygame.draw.rect(self.screen, WHITE, fillRect)
 
         font = self.__getFont__()
