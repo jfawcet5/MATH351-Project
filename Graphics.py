@@ -5,6 +5,7 @@
     Sources:
             pygame: https://www.pygame.org/docs/
             roundToNearest function: https://www.kite.com/python/answers/how-to-round-to-the-nearest-multiple-of-5-in-python
+            String Formatting: https://www.w3schools.com/python/ref_string_format.asp
 
     Design influenced by:
         - Desmos: https://www.desmos.com/calculator
@@ -15,7 +16,7 @@ import pygame
 import sys
 import math
 
-from Interpolation import newtonsIP
+from Interpolation import newtonsIP, evaluatePolynomial
 
 from pygame.locals import (
     MOUSEBUTTONDOWN,
@@ -41,6 +42,8 @@ BLUE = (50, 20, 170)
 RED = (255, 10, 10)
 GREEN = (10, 200, 10)
 
+MAXPOINTS = 10
+
 ####################
 # Helper Functions #
 ####################
@@ -52,6 +55,9 @@ def inCircle(pointpos, circleRadius, clickpos):
 
 def roundToNearest(number, base):
     return base * round(number / base)
+
+def lerp(a, b, f):
+    return (1-f)*a + f*b 
 
 def isValidNumber(string):
     # Try-Except used to prevent program from crashing when trying to determine if 'string' contains a valid number
@@ -75,6 +81,81 @@ def isValidNumber(string):
         return False
 
     return True
+
+def formatNumberString(string):
+
+    newStr = string
+
+    roundDecimal = False
+    convertToInt = False
+    ScientificNotation = False
+
+    index = string.find('.')
+    if index != -1:
+        numDecimals = len(string[index+1:])
+        if numDecimals > 4:
+            roundDecimal = True
+        elif numDecimals == 1 and string[index+1] == '0':
+            convertToInt = True
+
+        magnitude = len(string[:index])
+        if magnitude > 4:
+            ScientificNotation = True
+
+    else:
+        if len(newStr) > 4:
+            ScientificNotation = True
+
+    if convertToInt:
+        if ScientificNotation:
+            newStr = '{:e}'.format(int(float(newStr)))
+        else:
+            newStr = '{:d}'.format(int(float(newStr)))
+    else:
+        if ScientificNotation:
+            newStr = '{0.4e}'.format(float(newStr))
+        else:
+            newStr = '{:0.4f}'.format(float(newStr))
+
+        while newStr[-1] == '0':
+            newStr = newStr[:-1]
+
+    return newStr
+
+def getPolynomialString(xs, table):
+    returnString = 'P(x) = '
+
+    n = len(table)
+    m = len(table[0])
+
+    startingValue = formatNumberString(str(table[0][0]))
+
+    returnString = returnString + startingValue + ' '
+
+    for i in range(1, n):
+        add = ''
+        coefficient = table[0][i]
+        if coefficient < 0:
+            s = formatNumberString(str(abs(coefficient)))
+            add += f'- {s}'
+        else:
+            s = formatNumberString(str(coefficient))
+            add += f'+ {s}'
+
+        for j in range(i):
+            add += '(x '
+            xi = xs[j]
+            if xi < 0:
+                s = formatNumberString(str(abs(xi)))
+                add += f'+ {s}'
+            else:
+                s = formatNumberString(str(xi))
+                add += f'- {s}'
+            add += ')'
+        add += ' ' 
+        
+        returnString += add 
+    return returnString
 
 
 ################################################################################################
@@ -525,7 +606,7 @@ class SideMenu:
         pygame.draw.line(self.screen, BLACK, (9, 9), (33,33), 3)
         pygame.draw.line(self.screen, BLACK, (9, 33), (33,9), 3)
 
-        pygame.draw.rect(self.screen, DARKGREY, self.scrollRect)
+        #pygame.draw.rect(self.screen, DARKGREY, self.scrollRect)
 
     def clickOnPointDisplay(self, position):
         for rect,point in self.pointDisplayRects:
@@ -572,12 +653,16 @@ class SideMenu:
                 point.active = False # Set the point to be inactive
             return point
 
-    def scroll(self, dy): # Semi-Functional - Needs fixing
-        newPos = self.scrollRect.top + dy
-        newPos = max(newPos, 44)
-        newPos = min(newPos, self.rect.bottom - self.scrollRect.height)
-        self.scrollRect.top = newPos
-        self.drawBG()
+    def scroll(self, dy):
+        # This method does nothing. It was originally implemented to allow the user to scroll down through the points in the
+        # side menu to be able to see them all. However, since the interpolating polynomial (p(x) = ...) gets very hard to
+        # display as the number of points increases, the number of points is limited to 10 and this scroll feature is not needed
+        #newPos = self.scrollRect.top + dy
+        #newPos = max(newPos, 44)
+        #newPos = min(newPos, self.rect.bottom - self.scrollRect.height)
+        #self.scrollRect.top = newPos
+        #self.drawBG()
+        return None
 
     def __drawPointBGs__(self):
         font = pygame.font.SysFont("Courier New", 12, bold=True)
@@ -585,7 +670,7 @@ class SideMenu:
 
         top = self.scrollRect.top - 44
         
-        pointBGRect = pygame.Rect(0, 44 - top, self.rect.width - 20, 40)
+        pointBGRect = pygame.Rect(0, 44 - top, self.rect.width - 2, 40)
         for point in self.pointList:
             x,y = point.coordinates
             pygame.draw.rect(self.screen, WHITE, pointBGRect)
@@ -593,7 +678,6 @@ class SideMenu:
             temp = pointBGRect.copy()
             self.pointDisplayRects.append((temp, point))
 
-            #displayString = f"{round(x,6), round(y,6)}"
             displayString = point.str
             
             text = font.render(displayString, True, BLACK)
@@ -626,20 +710,78 @@ class BottomMenu:
         self.active = False
 
         self.displayText = "P(X) = 0"
+        self.fontSize = 28
+
+        scrollBarPosition = 0
+        self.scrollRect = pygame.Rect(0, self.rect.height - 17, 30, 17)
 
         self.drawBG()
         return None
 
     def drawBG(self):
         self.screen.fill((120, 120, 255))
-        fillRect = pygame.Rect(4, 8, self.rect.width - 8, self.rect.height - 16)
+        fillRect = pygame.Rect(4, 8, self.rect.width - 8, self.rect.height - 28)
         pygame.draw.rect(self.screen, WHITE, fillRect)
 
-        font = pygame.font.SysFont("Courier New", 30, bold=True)
+        font = self.__getFont__()
         text = font.render(self.displayText, True, BLACK)
         textRect = text.get_rect()
-        textRect.center = (self.rect.centerx, self.rect.height // 2)
+
+        X = self.getTextPosition(font)
+        
+        textRect.midleft = (X, fillRect.centery)
         self.screen.blit(text, textRect)
+        pygame.draw.rect(self.screen, (90, 90, 160), self.scrollRect)
+        return None
+
+    def scroll(self, dx):
+        self.scrollRect.left += dx
+        self.scrollRect.left = max(0, self.scrollRect.left)
+        self.scrollRect.right = min(self.rect.right, self.scrollRect.right)
+
+    def getTextPosition(self, font):
+        width, height = font.size(self.displayText)
+        #print(f"tw: {width}, rw: {self.rect.width - 8}", end=" ")
+
+        movement = lerp(0, 1, self.scrollRect.left / (self.rect.width- 30))
+
+        textRight = 4 + width
+
+        offset = self.rect.right - textRight
+
+        if offset > 0:
+            return 4
+
+        position = lerp(0, offset, movement)
+        return position + 4
+
+    def __getFont__(self):
+        font = pygame.font.SysFont("Courier New", self.fontSize, bold=True)
+
+        maxWidth = self.rect.width - 8
+        
+        width, height = font.size(self.displayText)
+
+        # This while loop scales the font size up to be as big as possible within the screen
+        while width < maxWidth:
+            if self.fontSize == 28:
+                return font
+            self.fontSize += 2
+            font = pygame.font.SysFont("Courier New", self.fontSize, bold=True)
+            width, height = font.size(self.displayText)
+
+        # This while loop scales the font size down to fit inside the screen
+        while width > maxWidth:
+            if self.fontSize == 12:
+                return font
+            self.fontSize -= 2
+            font = pygame.font.SysFont("Courier New", self.fontSize, bold=True)
+            width, height = font.size(self.displayText)
+        return font
+
+    def updateDisplay(self, newText):
+        self.displayText = newText
+        self.drawBG()
         return None
         
 
@@ -717,7 +859,7 @@ class Graph(Grid):
             a point for every pixel in the screen using the calculated interpolating polynomial and
             then draws a tiny line between each of these points
         '''
-        if len(self.points) > 1:
+        if len(self.points) >= 1:
             # 'data' is a list of the form: [(x1, f(x1)), (x1, f(x1)), ...], where each tuple (xi, f(xi))
             # represents a coordinate in screen space to be drawn to the screen
             data = []
@@ -730,10 +872,16 @@ class Graph(Grid):
                     x,y = point.coordinates
 
                     if x in xs: # If the x values of the points are not distinct, then we can't calculate the interpolating polynomial
+                        self.bottomMenu.updateDisplay('Error: x values must be distinct')
                         return None
 
                     xs.append(x)
                     ys.append(y)
+
+            dividedDifferenceTable = newtonsIP(xs, ys)
+
+            polynomialDisplay = getPolynomialString(xs, dividedDifferenceTable)
+            self.bottomMenu.updateDisplay(polynomialDisplay)
         
             # sx1, sx2 define the range of points to be plotted. sx1 is the x coordinate of the leftmost pixel
             # in screen space, and x2 is the x coordinate of the rightmost pixel in screen space
@@ -744,7 +892,7 @@ class Graph(Grid):
                 wx = self.convertToWorld(sx, 0)[0] # convert current screen coordinate 'sx' to a world space coordinate 'wx'
 
                 # This following line evaluates the interpolating polynomial at 'wx'
-                wy = newtonsIP(xs, ys, wx)
+                wy = evaluatePolynomial(wx, xs, dividedDifferenceTable)
                 # store (screen space x, screen space f(x)) in a tuple called 'c'
                 c = (sx, self.convertToScreen(0, wy)[1])
                 # append the coordinate 'c' to the list of coordinates 'data'
@@ -752,6 +900,9 @@ class Graph(Grid):
 
             # Draw a line between each of the plotted points
             pygame.draw.lines(self.screen, RED, False, data, 2)
+
+        else:
+            self.bottomMenu.updateDisplay('Add points to interpolate')
 
         return None
 
@@ -860,7 +1011,7 @@ class Graph(Grid):
         if not addPointButton.selected:
             return None
         
-        if len(self.points) < 30:
+        if len(self.points) < MAXPOINTS:
             if x != math.inf and y != math.inf:
                 sx, sy = x,y
                 wx, wy = self.convertToWorld(sx, sy)
@@ -943,15 +1094,15 @@ class InputManager:
             if button.rect.collidepoint(x, y):
                 return button
 
-        # Check if clicked on the side menu
-        if sidemenu.active:
-            if sidemenu.rect.collidepoint(x, y):
-                return sidemenu
-
         # Check bottom menu
         if bottomMenu.active:
             if bottomMenu.rect.collidepoint(x, y):
                 return bottomMenu
+
+        # Check if clicked on the side menu
+        if sidemenu.active:
+            if sidemenu.rect.collidepoint(x, y):
+                return sidemenu
 
         # Check if clicked on a point
         for point in points:
@@ -1021,6 +1172,13 @@ class InputManager:
             else:
                 dy = 10
             self.graph.menu.scroll(dy)
+
+        elif isinstance(clickedObject, BottomMenu):
+            if scrollType == 0:
+                dx = 10
+            else:
+                dx = -10
+            self.graph.bottomMenu.scroll(dx)
         return None
 
     def pressKey(self, ev):
@@ -1073,6 +1231,9 @@ class InputManager:
                 
             elif isinstance(self.objectClickedOn, SideMenu): # If the user is dragging the side menu scroll bar
                 self.graph.menu.scroll(dy)
+
+            elif isinstance(self.objectClickedOn, BottomMenu):
+                self.graph.bottomMenu.scroll(dx)
         return None
 
 #####################
