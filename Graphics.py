@@ -108,7 +108,7 @@ def formatNumberString(string):
 
     if convertToInt:
         if ScientificNotation:
-            newStr = '{:e}'.format(int(float(newStr)))
+            newStr = '{:0.2e}'.format(int(float(newStr)))
         else:
             newStr = '{:d}'.format(int(float(newStr)))
     else:
@@ -241,6 +241,11 @@ class Grid:
         self.__drawGrid__()
 
     def snapToGrid(self, x, y):
+        ''' given world coordinates (x,y), this method determines if the coordinates
+            are close enough to a grid line to change the coordinates from (x,y)
+            to (newx, newy) where (newx, newy) are rounded numbers according to the
+            current scale of the graph
+        '''
         newx = x
         newy = y
         scale = self.worldScale / 2
@@ -559,10 +564,13 @@ class deletePointButton(Button):
 
 ################################################################################################
 ################################################################################################
-##                                     Menu Class                                             ##
+##                                     Menu Classes                                           ##
 ################################################################################################
 ################################################################################################
 
+###############
+## Side Menu ##
+###############
 class SideMenu:
     def __init__(self, screen_size):
         self.screen = pygame.Surface((screen_size[0] // 4, screen_size[1]))
@@ -586,6 +594,8 @@ class SideMenu:
         return None
 
     def drawBG(self):
+        ''' Draws each aspect of the side menu
+        '''
         self.screen.fill(GREY)
 
         font = pygame.font.SysFont("Arial", 28, bold=True)
@@ -609,6 +619,12 @@ class SideMenu:
         #pygame.draw.rect(self.screen, DARKGREY, self.scrollRect)
 
     def clickOnPointDisplay(self, position):
+        ''' This method defines what happens when the user clicks on a point
+            display in the side menu:
+
+            When a point display is clicked, it will either be selected,
+            or deselected
+        '''
         for rect,point in self.pointDisplayRects:
             if rect.collidepoint(position[0], position[1]):
                 self.selected = (rect, point)
@@ -618,14 +634,26 @@ class SideMenu:
         return None
 
     def moveCursor(self, direction):
+        ''' Moves the cursor's position one character to the left/right based
+            on user input
+        '''
         if self.selected is not None:
             if direction == 1: # Move cursor to right
                 self.cursorPosition = (self.cursorPosition - 1) % len(self.pointText)
-            else:
+            else: # Move cursor to the left
                 self.cursorPosition = (self.cursorPosition + 1) % len(self.pointText)
         return None
 
     def insertChar(self, char):
+        ''' This method is used to insert and delete characters from a point's coordinate display,
+            based on user input.
+
+            If 'char' is an empty string (''), then the user is deleting the character that is located
+            directly to the left of the cursor.
+
+            Otherwise, 'char' is a single numeric character ('123...' or '.' or '-') that the user is
+            inserting at the position indicated by the cursor
+        '''
         if self.selected is not None:
             index = (-1 * self.cursorPosition) - 1
             if index == -1: # User is trying to insert at an invalid index
@@ -665,6 +693,9 @@ class SideMenu:
         return None
 
     def __drawPointBGs__(self):
+        ''' Draw the white background for each of the point displays as well as the point
+            display text (showing each point's coordinates
+        '''
         font = pygame.font.SysFont("Courier New", 12, bold=True)
         self.pointDisplayRects = []
 
@@ -701,6 +732,10 @@ class SideMenu:
         self.pointList = pointsList
         self.drawBG()
 
+
+#################
+## Bottom Menu ##
+#################
 class BottomMenu:
     def __init__(self, screen_size):
         self.screen = pygame.Surface((screen_size[0], screen_size[1] // 8))
@@ -719,6 +754,8 @@ class BottomMenu:
         return None
 
     def drawBG(self):
+        ''' Draw the bottom menu background, scroll bar, and interpolation polynomial display text
+        '''
         self.screen.fill((120, 120, 255))
         fillRect = pygame.Rect(4, 8, self.rect.width - 8, self.rect.height - 30)
         pygame.draw.rect(self.screen, WHITE, fillRect)
@@ -735,13 +772,18 @@ class BottomMenu:
         return None
 
     def scroll(self, dx):
+        ''' Move the scroll bar based on user input. 
+        ''' 
         self.scrollRect.left += dx
         self.scrollRect.left = max(0, self.scrollRect.left)
         self.scrollRect.right = min(self.rect.right, self.scrollRect.right)
 
     def getTextPosition(self, font):
+        ''' Gets the new position of the display text based on the position of the scroll bar. This
+            method is what makes the interpolation polynomial display move when the user drags the
+            scroll bar
+        '''
         width, height = font.size(self.displayText)
-        #print(f"tw: {width}, rw: {self.rect.width - 8}", end=" ")
 
         movement = lerp(0, 1, self.scrollRect.left / (self.rect.width- 30))
 
@@ -756,6 +798,9 @@ class BottomMenu:
         return position + 4
 
     def __getFont__(self):
+        ''' Returns a font with a size in the range [12,28], attempting to size the font
+            as big as possible without the text going off the screen
+        '''
         font = pygame.font.SysFont("Courier New", self.fontSize, bold=True)
 
         maxWidth = self.rect.width - 8
@@ -797,13 +842,16 @@ class BottomMenu:
 # including the grid lines, labeled axes, buttons, and points
 class Graph(Grid):
     def __init__(self, screen_size):
-        # Call parent __init__()
+        # Call parent class (grid) __init__() to set up the graph display
         super(Graph, self).__init__(screen_size)
 
+        # List of points
         self.points = []
 
+        # List of buttons
         self.buttons = []
 
+        # Populate the list of buttons
         self.buttons.append(resetButton(self.reset, screen_size))
         self.buttons.append(clearButton(self.clearAllPoints, screen_size))
         self.buttons.append(zoomInButton(self.zoomIn, screen_size))
@@ -813,9 +861,12 @@ class Graph(Grid):
         self.buttons.append(openMenuButton(self.toggleMenu, screen_size))
         self.buttons.append(addPointButton(lambda : (), screen_size))
 
+        # Create side menu
         self.menu = SideMenu(screen_size)
+        # Create bottom menu
         self.bottomMenu = BottomMenu(screen_size)
 
+        # Useful state information
         self.currentClickedPoint = None
         self.selectedPoint = None
         self.mouseMoveSinceClickDown = (0,0)
@@ -831,24 +882,28 @@ class Graph(Grid):
         ''' Copy the graph's local screen onto the main pygame display 'screen'
             in order to display the graph to the window
         '''
-        self.__drawGrid__()
-        self.plot()
-        screen.blit(self.screen, self.rect)
+        self.__drawGrid__() # draw the grid lines to the graph's local screen
+        self.plot() # Plot the interpolating polynomial to the graph's local screen
+        screen.blit(self.screen, self.rect) # copy the graph's local screen to the main pygame display
 
+        # Iterate through the points and draw them to the main pygame display
         for point in self.points:
             if point.active:
                 x,y = point.screenPos
                 pygame.draw.circle(screen, point.color, (int(x+1), int(y)), 5, 0)
 
+        # Iterate through the buttons and draw them to the main pygame display
         for button in self.buttons:
             if type(button) == deletePointButton and self.selectedPoint is None:
                 continue
             screen.blit(button.screen, button.rect)
 
+        # If the side menu is active, draw it to the main pygame display
         if self.menu.active:
             self.menu.updatePoints(self.points)
             screen.blit(self.menu.screen, self.menu.rect)
 
+        # If the bottom menu is active, draw it to the main pygame display
         if self.bottomMenu.active:
             screen.blit(self.bottomMenu.screen, self.bottomMenu.rect)
         return None
@@ -864,7 +919,9 @@ class Graph(Grid):
             # represents a coordinate in screen space to be drawn to the screen
             data = []
 
+            # A list of the x coordinates of the points for polynomial interpolation
             xs = []
+            # A list of the y coordinates of the points for polynomial interpolation
             ys = []
 
             for point in self.points:
@@ -878,9 +935,12 @@ class Graph(Grid):
                     xs.append(x)
                     ys.append(y)
 
+            # Calculate the divided difference table based on Newton's polynomial interpolation method
             dividedDifferenceTable = newtonsIP(xs, ys)
 
+            # generate the interpolation polynomial display string
             polynomialDisplay = getPolynomialString(xs, dividedDifferenceTable)
+            # Update the bottom menu to display the interpolating polynomial
             self.bottomMenu.updateDisplay(polynomialDisplay)
         
             # sx1, sx2 define the range of points to be plotted. sx1 is the x coordinate of the leftmost pixel
@@ -891,7 +951,7 @@ class Graph(Grid):
             for sx in range(sx1, sx2): # iterate from sx1 to sx2
                 wx = self.convertToWorld(sx, 0)[0] # convert current screen coordinate 'sx' to a world space coordinate 'wx'
 
-                # This following line evaluates the interpolating polynomial at 'wx'
+                # This following line evaluates the interpolating polynomial at world coordinate 'wx'
                 wy = evaluatePolynomial(wx, xs, dividedDifferenceTable)
                 # store (screen space x, screen space f(x)) in a tuple called 'c'
                 c = (sx, self.convertToScreen(0, wy)[1])
@@ -901,7 +961,7 @@ class Graph(Grid):
             # Draw a line between each of the plotted points
             pygame.draw.lines(self.screen, RED, False, data, 2)
 
-        else:
+        else: # If there are no points: display this message in the bottom menu
             self.bottomMenu.updateDisplay('Add points to interpolate')
 
         return None
@@ -949,12 +1009,16 @@ class Graph(Grid):
             self.zoom(1)
 
     def deleteSelectedPoint(self):
+        ''' Delete the currently selected point
+        '''
         if self.selectedPoint is not None:
             self.points.remove(self.selectedPoint)
             self.selectedPoint = None
         return None
 
     def toggleMenu(self):
+        ''' Open/close the side menu
+        '''
         self.menu.active = not self.menu.active
         if self.menu.active:
             addPointButton= self.buttons[-1]
@@ -969,6 +1033,8 @@ class Graph(Grid):
         return None
 
     def toggleBottomMenu(self):
+        ''' Open/close the bottom menu
+        '''
         self.bottomMenu.active = not self.bottomMenu.active
 
         toggleMenuButton = self.buttons[-4]
@@ -984,12 +1050,16 @@ class Graph(Grid):
     ################################
 
     def movePoint(self, pointToMove, changeInPosition):
+        ''' Update a point's position
+        '''
         dx,dy = changeInPosition
 
         pointToMove.update(self, dx,dy)
         return None
 
     def selectPoint(self, point):
+        ''' Select (or deselect) a single point specified by 'point'
+        '''
         point.select()
         if point.selected == True:
             self.selectedPoint = point
@@ -999,14 +1069,16 @@ class Graph(Grid):
         return None
 
     def deselectPoints(self):
-        '''
+        ''' Deselect all points
         '''
         for point in self.points:
             point.select(False)
         self.selectedPoint = None
 
     def addPoint(self, x=math.inf, y=math.inf):
-        # 
+        ''' This method adds a new point to the graph at the specified x and y coordinates
+            (in screen space). This method will only add up to 'MAXPOINTS' points
+        '''
         addPointButton = self.buttons[-1]
         if not addPointButton.selected:
             return None
@@ -1031,20 +1103,24 @@ class Graph(Grid):
     ##################################
 
     def dragScreen(self, dx, dy):
+        ''' This method moves the graph's grid lines based on the user's mouse inputs. In order to make sure
+            the graph works correctly, the points must also move with the graph background so that they are
+            always located at the correct world coordinates and screen position
+        '''
         self.updatePosition(dx, dy)
         self.plot()
 
         for point in self.points:
             point.update(self, dx, dy)
 
-        x, y = self.mouseMoveSinceClickDown
-        self.mouseMoveSinceClickDown = (x + abs(dx), y+abs(dy))
         return None
 
     def zoom(self, zoomType):
         ''' self.zoom implements a single zoom in/out, based on the grid.__zoom__() implementation.
             This function is called from 3 different sources: the self.zoomIn() function, self.zoomOut()
             function, and it is called for every movement of the user's mouse scroll wheel
+
+            Both the graph's grid lines and each point's position must be updated based on the new scale
         '''
         self.__zoom__(zoomType)
         for point in self.points:
@@ -1059,8 +1135,9 @@ class Graph(Grid):
 ##                                Input Manager Class                                         ##
 ################################################################################################
 ################################################################################################
-    
 
+# The input manager class reads and handles user input events based on the type of input and the
+# graph's internal state (which menus are active, etc.)
 class InputManager:
     def __init__(self, screen_size):
         self.graph = Graph(screen_size)
@@ -1074,12 +1151,12 @@ class InputManager:
 
             The click hierarchy is determined here to prevent multiple objects from being interacted
             with at the same time. (ex: If a point is behind the side menu, clicking on the side menu should
-            prevent the point from being clicked on, dragged, etc.)
+            prevent the point from being clicked on/dragged, etc.)
             
             Click hierarchy (order in which objects are checked):
                 1. button
-                2. side menu
-                3. bottom menu
+                2. bottom menu
+                3. side menu
                 4. point
         '''
         x,y = clickPosition
@@ -1094,7 +1171,7 @@ class InputManager:
             if button.rect.collidepoint(x, y):
                 return button
 
-        # Check bottom menu
+        # Check if clicked on bottom menu
         if bottomMenu.active:
             if bottomMenu.rect.collidepoint(x, y):
                 return bottomMenu
@@ -1117,15 +1194,17 @@ class InputManager:
             released
         """
         if clickType == 0: # left click down
+            # Get a reference to the object that was clicked on
             clickedObject = self.getClickedObject(clickPosition)
 
-            self.objectClickedOn = clickedObject
-            self.mouseIsDown = True
-            self.mouseDeltaXY = [0,0]
+            self.objectClickedOn = clickedObject # save the clicked object
+            self.mouseIsDown = True # self.mouseIsDown is true until the next left click up event
+            self.mouseDeltaXY = [0,0] # Reset the relative mouse movement
 
         else: # Left click up
 
             # dx,dy = number of pixels the mouse moved in the x,y coordinates since mouse click down
+            # Note: self.mouseDeltaXY is updated in self.update()
             dx,dy = self.mouseDeltaXY
 
             if dx < 4 and dy < 4: # If mouse moved within this small margin, then the user clicked on something
@@ -1150,12 +1229,14 @@ class InputManager:
                             selectedPoint.selected = isActive
                             self.graph.selectPoint(selectedPoint)
 
-            else: # The user was dragging an object (a point, the graph, etc.)
-                if isinstance(self.objectClickedOn, Point):
+            else: # The user was dragging an object (a point, the graph, etc.) instead of clicking on an object
+                if isinstance(self.objectClickedOn, Point): # If the user was dragging a point
+                    # Use snapToGrid() function to move the point onto a grid line if the user placed
+                    # the point close enough to the grid line
                     self.objectClickedOn.snapToGrid(self.graph)  
 
-            self.objectClickedOn = None
-            self.mouseIsDown = False
+            self.objectClickedOn = None # Reset object clicked on for next click down event
+            self.mouseIsDown = False # Left mouse button is no longer being held down
         return None
 
     def onMouseScroll(self, scrollType, mousePosition):
@@ -1163,17 +1244,22 @@ class InputManager:
         '''
         clickedObject = self.getClickedObject(mousePosition)
 
+        # If the mouse is hovering over the grid or over a point
         if clickedObject is None or isinstance(clickedObject, Point):
-            self.graph.zoom(scrollType)
+            self.graph.zoom(scrollType) # Zoom in/out
 
+        # If the mouse is hovering over the side menu
         elif isinstance(clickedObject, SideMenu):
+            # Scroll up/down 
             if scrollType == 0:
                 dy = -10
             else:
                 dy = 10
             self.graph.menu.scroll(dy)
 
+        # If the menu is hovering over the bottom menu
         elif isinstance(clickedObject, BottomMenu):
+            # Scroll the bottom menu left/right
             if scrollType == 0:
                 dx = 10
             else:
@@ -1188,21 +1274,25 @@ class InputManager:
             the event, and takes the appropriate action based on the key
         '''
         key = ev.key
-        if key == K_RIGHT:
-            if self.graph.menu.active:
-                self.graph.menu.moveCursor(1)
+        if key == K_RIGHT: # If the user pressed the right arrow key
+            if self.graph.menu.active: # If the side menu is active
+                self.graph.menu.moveCursor(1) # Move the cursor to the right
 
-        if key == K_LEFT:
-            if self.graph.menu.active:
-                self.graph.menu.moveCursor(0)
+        if key == K_LEFT: # If the user pressed the left arrow key
+            if self.graph.menu.active: # If the side menu is active
+                self.graph.menu.moveCursor(0) # Move the cursor to the left
 
+        # If the user pressed a number key (0,1, 2, ...) or the minus key '-' or backspace
         if ev.unicode.isdigit() or ev.unicode == "." or ev.unicode == "-" or key == K_BACKSPACE:
-            if self.graph.menu.active:
+            if self.graph.menu.active: # If the side menu is active
                 if key == K_BACKSPACE: # User is deleting a character
                     updatedPoint = self.graph.menu.insertChar("")
                     
                 else: # User is inserting a character
                     updatedPoint = self.graph.menu.insertChar(ev.unicode)
+
+                # 'updatedPoint' holds a point that was modified by the user, or None if a point was not
+                # modified (due to no points being selected)
                     
                 if updatedPoint is None: # User has not selected a point to modify
                     return None
@@ -1232,7 +1322,7 @@ class InputManager:
             elif isinstance(self.objectClickedOn, SideMenu): # If the user is dragging the side menu scroll bar
                 self.graph.menu.scroll(dy)
 
-            elif isinstance(self.objectClickedOn, BottomMenu):
+            elif isinstance(self.objectClickedOn, BottomMenu): # If the user is dragging the bottom menu scroll bar
                 self.graph.bottomMenu.scroll(dx)
         return None
 
