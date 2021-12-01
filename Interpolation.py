@@ -1,3 +1,8 @@
+""" This file implements the Newton's Interpolation functionality.
+
+    Authors: Joshua Fawcett, Hans Prieto
+"""
+
 def newtonsIP(Xs, Ys):
     '''
     Creates a divided difference table for a list of x and y coordinates.
