@@ -6,6 +6,7 @@
             pygame: https://www.pygame.org/docs/
             roundToNearest function: https://www.kite.com/python/answers/how-to-round-to-the-nearest-multiple-of-5-in-python
             String Formatting: https://www.w3schools.com/python/ref_string_format.asp
+            Lerp function from: Game Programming Algorithms and Techniques by Sanjay Madhav
 
     Design influenced by:
         - Desmos: https://www.desmos.com/calculator
@@ -18,6 +19,7 @@ import math
 
 from Interpolation import newtonsIP, evaluatePolynomial
 
+# Import pygame key constants
 from pygame.locals import (
     MOUSEBUTTONDOWN,
     MOUSEBUTTONUP,
@@ -34,6 +36,7 @@ from pygame.locals import (
 
 FPS = 45
 
+# Defined colors (RGB)
 BLACK = (0,0,0)
 WHITE = (255,255,255)
 GREY = (170,170,170)
@@ -42,6 +45,7 @@ BLUE = (50, 20, 170)
 RED = (255, 10, 10)
 GREEN = (10, 200, 10)
 
+# Maximum number of points the graph can interpolate
 MAXPOINTS = 10
 
 ####################
@@ -49,17 +53,26 @@ MAXPOINTS = 10
 ####################
 
 def inCircle(pointpos, circleRadius, clickpos):
+    ''' Helper function to determine if the mouse clicked on a point. 
+    '''
     collideX = abs(clickpos[0] - pointpos[0]) <= circleRadius #x > rect.left and x < rect.right
     collideY = abs(clickpos[1] - pointpos[1]) <= circleRadius #y > rect.top and y < rect.bottom
     return collideX and collideY
 
 def roundToNearest(number, base):
+    ''' Helper function to round numbers to an arbitrary base
+    '''
     return base * round(number / base)
 
 def lerp(a, b, f):
+    ''' Linear interpolation used to calculate a midpoint between two values (a, b)
+        Formula: Lerp(a, b, f) = (a-f)a + fb
+    '''
     return (1-f)*a + f*b 
 
 def isValidNumber(string):
+    ''' Helper function to determine if 'string' contains a valid floating point number or integer
+    '''
     # Try-Except used to prevent program from crashing when trying to determine if 'string' contains a valid number
     try:
         if '.' in string: # Number is of the form "x.y" (ex: "3.5")
@@ -83,6 +96,10 @@ def isValidNumber(string):
     return True
 
 def formatNumberString(string):
+    ''' Helper function to format the number in 'string' in order to prevent the graphical display of certain numbers
+        from taking up too much space. (rounds numbers with large number of decimal points, converts to scientific notation
+        if the number is large, etc.)
+    '''
 
     newStr = string
 
@@ -117,16 +134,18 @@ def formatNumberString(string):
         else:
             newStr = '{:0.4f}'.format(float(newStr))
 
-        while newStr[-1] == '0':
+        while newStr[-1] == '0': # Remove unecessary trailing zeros
             newStr = newStr[:-1]
 
     return newStr
 
 def getPolynomialString(xs, table):
+    ''' Helper function that takes a list of x coordinates and a divided difference table and returns
+        a string that represents the interpolation polynomial (ex: 'P(x) = 1 + 3(x - 2) + ...')
+    '''
     returnString = 'P(x) = '
 
     n = len(table)
-    m = len(table[0])
 
     startingValue = formatNumberString(str(table[0][0]))
 
@@ -164,10 +183,11 @@ def getPolynomialString(xs, table):
 ################################################################################################
 ################################################################################################
 
+# The point class is a container to hold a single point in the graphical interface. 
 class Point:
     def __init__(self, worldCoords, screenCoords, radius=5, color=BLUE):
-        self.coordinates = worldCoords
-        self.screenPos = screenCoords
+        self.coordinates = worldCoords # Coordinates of point in world space (based on the coordinate axes of the grid)
+        self.screenPos = screenCoords # Coordinates of point in screen space (location of the point relative to the pygame window)
         
         self.color = color
         self.radius = radius
@@ -178,17 +198,27 @@ class Point:
         self.updateStr()
 
     def update(self, grid, dx, dy):
+        ''' Update the point's world coordinates and screen position based on the
+            change in (screen space) x and y. 
+        '''
         cur_screen_x, cur_screen_y = self.screenPos
 
+        # Update current screen position
         self.screenPos = (cur_screen_x + dx, cur_screen_y + dy)
 
+        # Get new world coordinates based on updated screen position
         wx, wy = grid.convertToWorld(self.screenPos[0], self.screenPos[1])
 
         self.coordinates = (round(wx, 6), round(wy, 6))
+
+        # The point's string representation of itself
         self.updateStr()
         return None
 
     def snapToGrid(self, grid):
+        ''' Update the point's position based on current grid lines. Uses the graph.snapToGrid()
+            function to determine what the new coordinates are
+        '''
         wx, wy = grid.snapToGrid(self.coordinates[0], self.coordinates[1])
         self.screenPos = grid.convertToScreen(wx, wy)
         self.coordinates = (wx, wy)
@@ -199,6 +229,10 @@ class Point:
         self.str = string
 
     def select(self, selectValue=None):
+        ''' Toggles whether the point is selected or not. (if 'selectValue' is specified, then the
+            point will be set to selected/deselected based on the specified value). Updates
+            the point's color based on selected value
+        '''
         if selectValue is not None:
             self.selected = not selectValue
         
@@ -210,6 +244,8 @@ class Point:
             self.selected = True
 
     def __repr__(self):
+        ''' Used for debugging
+        '''
         return f"P{self.coordinates}"
 
 
@@ -258,18 +294,22 @@ class Grid:
         return newx,newy
 
     def convertToWorld(self, x, y):
-        # Convert screen space coordinates to world space coordinates
+        ''' Converts screen space coordinates (x,y) to world space coordinates
+        '''
         newX = (((x - self.xOffset) - (self.rect.width // 2)) / self.pixelsPerUnit) * self.worldScale
         newY = -1 * (((y + self.yOffset) - (self.rect.height // 2)) / self.pixelsPerUnit) * self.worldScale
         return (newX, newY)
 
     def convertToScreen(self, x, y):
-        # Convert world space coordinates to screen space coordinates
+        ''' Converts world coordinates (x,y) to screen space coordinates
+        '''
         newX = (((self.rect.width // 2) + (x * self.pixelsPerUnit / self.worldScale)) + self.xOffset)
         newY = (((self.rect.width // 2) - (y * self.pixelsPerUnit / self.worldScale)) - self.yOffset)
         return newX, newY
 
     def __drawGrid__(self):
+        ''' Draws coordinate axes and all other grid lines at the correct position on the screen
+        '''
         self.screen.fill(WHITE)
 
         relativeOffsetX = self.xOffset % self.pixelsPerUnit
@@ -283,31 +323,39 @@ class Grid:
         
         cvalueX = 0 - scaledOffX # world space coordinate value at center of screen
         cvalueY = 0 - scaledOffY # world space coordinate value at center of screen
-        
+
+        # Draw the lines in the center of the screen. (These may or may not correspond with x = 0 and y = 0)
         pygame.draw.line(self.screen, GREY, (centerx, self.rect.top), (centerx, self.rect.bottom), 1)
         pygame.draw.line(self.screen, GREY, (self.rect.left, centery), (self.rect.right, centery), 1)
 
+        # Label the horizontal and vertical center lines
         self.__labelAxis__(round(cvalueX * self.worldScale, 6), (centerx, self.rect.centery - self.yOffset), True)
         self.__labelAxis__(round(cvalueY * self.worldScale, 6), (self.rect.centerx + self.xOffset, centery), False)
 
+        # Calculate the number of lines to draw
         numLines = int((self.rect.width // self.pixelsPerUnit) + 2)
 
+        # This loop draws horizontal lines going up from the center, down from the center, and vertical lines going
+        # to the right from the center and to the left from the center
         for i in range(numLines):
             x0 = centerx + ((i+1)*self.pixelsPerUnit)
             x1 = centerx - ((i+1)*self.pixelsPerUnit)
             y0 = centery + ((i+1)*self.pixelsPerUnit)
             y1 = centery - ((i+1)*self.pixelsPerUnit)
 
+            # Draw horizontal and vertical lines
             pygame.draw.line(self.screen, GREY, (x0, self.rect.top), (x0, self.rect.bottom), 1)
             pygame.draw.line(self.screen, GREY, (x1, self.rect.top), (x1, self.rect.bottom), 1)
             pygame.draw.line(self.screen, GREY, (self.rect.left, y0), (self.rect.right, y0), 1)
             pygame.draw.line(self.screen, GREY, (self.rect.left, y1), (self.rect.right, y1), 1)
 
+            # Calculate the coordinate located at each of the grid lines
             v1x = round((cvalueX + i + 1)* self.worldScale, 6)
             v2x = round((cvalueX - i - 1)* self.worldScale, 6)
             v1y = round((cvalueY - i - 1)* self.worldScale, 6)
             v2y = round((cvalueY + i + 1)* self.worldScale, 6)
 
+            # Label the newly drawn lines
             self.__labelAxis__(v1x, (x0, self.rect.centery - self.yOffset), True)
             self.__labelAxis__(v2x, (x1, self.rect.centery - self.yOffset), True)
             self.__labelAxis__(v1y, (self.rect.centerx + self.xOffset, y0), False)
@@ -316,6 +364,9 @@ class Grid:
         return None
 
     def __labelAxis__(self, value, position, xAxis):
+        ''' Helper method: draws axis label at the specified position. Used in order to
+            give each grid line a coordinate
+        '''
         x, y = position
         
         text = self.font.render(f"{value}", True, BLACK)
@@ -346,51 +397,76 @@ class Grid:
         return None
 
     def __zoom__(self, zType):
+        ''' Updates the scale of the graph
+        '''
         scales = [1, 2, 5]
 
+        # Update the zoom count based on the type of zoom
         if zType == 0:
             self.zoomct += 1
         else:
             self.zoomct -= 1
 
+        # Use zoom count to find new zoomFactor (zoomFactor is used to update the pixelsPerUnit
+        # variable to determine how far apart the grid lines are drawn to create realistic zoom)
         zoomFactor = ((self.zoomct * 5) % 50)
 
+        # Save old pixels per unit
         oldppu = self.pixelsPerUnit
 
+        # Update the pixels per unit
         self.pixelsPerUnit = 50 + zoomFactor
 
-        self.zoomFactor = (self.pixelsPerUnit / oldppu)
+        # Update self.zoomRatio (the ratio of the new pixels per unit to the old pixels
+        # per unit. Used in order to update the offset of the grid origin)
+        self.zoomRatio = (self.pixelsPerUnit / oldppu)
 
-        self.xOffset = self.xOffset * self.zoomFactor
-        self.yOffset = self.yOffset * self.zoomFactor
+        # Update the offset of the origin in the x and y coordinates
+        self.xOffset = self.xOffset * self.zoomRatio
+        self.yOffset = self.yOffset * self.zoomRatio
 
         diff = abs(self.pixelsPerUnit - oldppu)
 
+        # Since zoomFactor is calculated using modulo (remainder division), occasionally there will be a
+        # big change in the pixels per unit. When this happens, the scale of the axis labels will change (for example
+        # -2 -1 0 1 2 may change to -4 -2 0 2 4
         if (diff > 5):
-
+            # Save the old x offset (in world coordinates)
             oldx = self.convertToWorld(self.xOffset, 0)[0]
 
+            # Update the index into the 'scales' list based on the type of zoom
             if zType == 0:
                 self.zoomIndex -= 1
             else:
                 self.zoomIndex += 1
 
+            # Since we use the 'scales' list as a circular buffer containing the base scale for the current
+            # zoom index, we need to calculate the order of magnitude of the scale
             factor = self.zoomIndex // 3
+
             index = self.zoomIndex % 3
 
+            # Update the world scale
             self.worldScale = scales[index]
             if factor != 0:
+                # Multiply the world scale by the order of magnitude
                 self.worldScale = self.worldScale * (10**factor)
 
+            # Calculate the new x offset in world coordinates
             newx = self.convertToWorld(self.xOffset, 0)[0]
 
-            # Ratio should be same for x and y assuming screen size is square
+            # Get the ratio of the new x offset to the old x offset. This will be used to update the x and y
+            # offsets in screen space. Note: ratio should be same for x and y assuming screen size is square
+            # (default is (700,700))
             ratio = oldx / newx
             self.xOffset *= ratio
             self.yOffset *= ratio # This may cause problems if the screen size is not square
         return None
 
     def updatePosition(self, dx, dy):
+        ''' Changes the offset of the graph origin in the x,y coordinates to move the coordinate
+            axes
+        '''
         self.xOffset += dx
         self.yOffset -= dy
         return None
@@ -402,6 +478,8 @@ class Grid:
 ################################################################################################
 ################################################################################################
 
+# The button class is responsible for drawing the buttons on the screen and taking
+# The appropriate action when a button is clicked on 
 class Button:
     def __init__(self, action, buttonSize):
         self.screen = pygame.Surface(buttonSize)
@@ -411,6 +489,7 @@ class Button:
     def onClick(self):
         self.fn()
 
+# Reset button: Resets the orientation of the graph to the default values
 class resetButton(Button):
     def __init__(self, action, screen_size):
         super(resetButton, self).__init__(action, (40, 40))
@@ -428,6 +507,7 @@ class resetButton(Button):
         self.screen.blit(text1, textRect1)
         self.screen.blit(text2, textRect2)
 
+# Clear button: Removes all points from the screen
 class clearButton(Button):
     def __init__(self, action, screen_size):
         super(clearButton, self).__init__(action, (40, 40))
@@ -447,6 +527,7 @@ class clearButton(Button):
 
         self.currentClickedPoint = None
 
+# Zoom in button: Zooms in on the graph
 class zoomInButton(Button):
     def __init__(self, action, screen_size):
         super(zoomInButton, self).__init__(action, (40, 40))
@@ -456,6 +537,7 @@ class zoomInButton(Button):
         pygame.draw.line(self.screen, BLACK, (10, 20), (30, 20), 3)
         pygame.draw.line(self.screen, BLACK, (20, 10), (20, 30), 3)
 
+# Zoom out button: Zooms out on the graph
 class zoomOutButton(Button):
     def __init__(self, action, screen_size):
         super(zoomOutButton, self).__init__(action, (40, 40))
@@ -464,6 +546,7 @@ class zoomOutButton(Button):
         
         pygame.draw.line(self.screen, BLACK, (10, 20), (30, 20), 3)
 
+# Open menu button: Opens the side menu
 class openMenuButton(Button):
     def __init__(self, action, screen_size):
         super(openMenuButton, self).__init__(action, (40, 40))
@@ -474,6 +557,7 @@ class openMenuButton(Button):
         pygame.draw.line(self.screen, BLACK, (10, 20), (30, 20), 2)
         pygame.draw.line(self.screen, BLACK, (10, 25), (30, 25), 2)
 
+# Open bottom menu buttton: Opens the bottom menu
 class openBottomMenuButton(Button):
     def __init__(self, action, screen_size):
         super(openBottomMenuButton, self).__init__(action, (40, 40))
@@ -504,6 +588,8 @@ class openBottomMenuButton(Button):
         self.__draw__()
         self.fn()
 
+# Add point button: Toggles the graph 'add point mode' where a point will be added to the graph
+# at the location of each mouse click
 class addPointButton(Button):
     def __init__(self, action, screen_size):
         super(addPointButton, self).__init__(action, (40, 40))
@@ -539,6 +625,7 @@ class addPointButton(Button):
         self.__draw__()
         self.fn()
 
+# Delete point button: Deletes a currently selected point
 class deletePointButton(Button):
     def __init__(self, action, screen_size):
         super(deletePointButton, self).__init__(action, (40, 40))
@@ -571,6 +658,10 @@ class deletePointButton(Button):
 ###############
 ## Side Menu ##
 ###############
+
+# Side menu is responsible for displaying the coordinates of all of the points on the graph.
+# It allows the user to view what points are on the graph, where the points are, and allows
+# them to modify the location of these points
 class SideMenu:
     def __init__(self, screen_size):
         self.screen = pygame.Surface((screen_size[0] // 4, screen_size[1]))
@@ -623,7 +714,7 @@ class SideMenu:
             display in the side menu:
 
             When a point display is clicked, it will either be selected,
-            or deselected
+            or deselected, and enables/disables modification of that point
         '''
         for rect,point in self.pointDisplayRects:
             if rect.collidepoint(position[0], position[1]):
@@ -736,6 +827,9 @@ class SideMenu:
 #################
 ## Bottom Menu ##
 #################
+
+# The bottom menu is responsible for graphically displaying the interpolating polynomial function
+# to the user
 class BottomMenu:
     def __init__(self, screen_size):
         self.screen = pygame.Surface((screen_size[0], screen_size[1] // 8))
@@ -825,6 +919,9 @@ class BottomMenu:
         return font
 
     def updateDisplay(self, newText):
+        ''' Update the bottom menu display. The new interpolating polynomial to display
+            will be provided in 'newText'
+        '''
         self.displayText = newText
         self.drawBG()
         return None
@@ -880,7 +977,7 @@ class Graph(Grid):
 
     def displayToScreen(self, screen):
         ''' Copy the graph's local screen onto the main pygame display 'screen'
-            in order to display the graph to the window
+            in order to display the graphical interface to the window
         '''
         self.__drawGrid__() # draw the grid lines to the graph's local screen
         self.plot() # Plot the interpolating polynomial to the graph's local screen
@@ -1042,7 +1139,6 @@ class Graph(Grid):
             toggleMenuButton.rect.centery -= self.bottomMenu.rect.height
         else:
             toggleMenuButton.rect.centery += self.bottomMenu.rect.height
-            pass
         return None
 
     ################################
@@ -1078,10 +1174,12 @@ class Graph(Grid):
     def addPoint(self, x=math.inf, y=math.inf):
         ''' This method adds a new point to the graph at the specified x and y coordinates
             (in screen space). This method will only add up to 'MAXPOINTS' points
+
+            Returns True if a point was added and False otherwise
         '''
         addPointButton = self.buttons[-1]
         if not addPointButton.selected:
-            return None
+            return False
         
         if len(self.points) < MAXPOINTS:
             if x != math.inf and y != math.inf:
@@ -1095,7 +1193,7 @@ class Graph(Grid):
             p.snapToGrid(self)
 
             self.points.append(p)
-        return None
+        return True
     ##################################
     #        Input Methods:          #
     # These methods update the graph #
@@ -1212,7 +1310,8 @@ class InputManager:
                 if self.objectClickedOn is None: # User did not click on any particular object
                     # Note: the graph will check to make sure the 'add point' button is selected
                     # before adding points. 
-                    self.graph.addPoint(clickPosition[0], clickPosition[1])
+                    if not self.graph.addPoint(clickPosition[0], clickPosition[1]):
+                        self.graph.deselectPoints()
 
                 elif isinstance(self.objectClickedOn, Button): # User clicked on a button
                     self.objectClickedOn.onClick()
@@ -1387,7 +1486,7 @@ def testProgram(screen, clock):
 # Main #
 ########
 
-def main():
+def runTest():
     pygame.init()
 
     screen = pygame.display.set_mode((700, 700))
@@ -1399,5 +1498,5 @@ def main():
     return None
 
 if __name__ == "__main__":
-    main()
+    runTest()
 
